@@ -192,7 +192,7 @@ class HoursValidationService:
         db: Session,
         target_date: date,
         target_time: time,
-        duration_minutes: int,
+        duration_minutes: int = 0,
     ) -> tuple[bool, str | None]:
         """
         Check if a reservation time is valid.
@@ -224,16 +224,6 @@ class HoursValidationService:
             return (
                 False,
                 f"Reservations must be made at least {settings.reservation_cutoff_minutes} minutes before closing ({close_time})",
-            )
-
-        # Check if reservation would extend past closing
-        reservation_end = datetime.combine(target_date, target_time) + timedelta(
-            minutes=duration_minutes
-        )
-        if reservation_end.time() > close_time:
-            return (
-                False,
-                f"Reservation would extend past closing time ({close_time})",
             )
 
         return True, None

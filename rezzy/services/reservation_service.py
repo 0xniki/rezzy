@@ -1,12 +1,13 @@
 from datetime import date, time, datetime, timedelta
 from sqlalchemy.orm import Session
-from sqlalchemy import and_, or_
+from sqlalchemy import and_
 from fastapi import HTTPException, status
+from itertools import combinations
 
-from rezzy.models import Reservation, Table, MergeGroup, RestaurantConfig
+from rezzy.models import Reservation, Table
 from rezzy.schemas import ReservationCreate, ReservationUpdate
 from rezzy.services.hours_service import HoursValidationService
-from rezzy.services.restaurant_service import TableService, MergeGroupService
+from rezzy.services.restaurant_service import TableService
 
 
 class ReservationService:
@@ -27,7 +28,7 @@ class ReservationService:
         if status_filter:
             query = query.filter(Reservation.status == status_filter)
         if table_id:
-            query = query.filter(Reservation.table_id == table_id)
+            query = query.filter(Reservation.tables.any(Table.id == table_id))
 
         return query.order_by(
             Reservation.reservation_date, Reservation.reservation_time
@@ -35,9 +36,7 @@ class ReservationService:
 
     @staticmethod
     def get_reservation(db: Session, reservation_id: int) -> Reservation:
-        reservation = (
-            db.query(Reservation).filter(Reservation.id == reservation_id).first()
-        )
+        reservation = db.query(Reservation).filter(Reservation.id == reservation_id).first()
         if not reservation:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -46,139 +45,103 @@ class ReservationService:
         return reservation
 
     @staticmethod
-    def _get_table_capacity(db: Session, table_id: int | None, merge_group_id: int | None) -> int:
-        """Get the seating capacity for a table or merge group"""
-        if table_id:
-            table = TableService.get_table(db, table_id)
-            return table.current_chairs
-        elif merge_group_id:
-            return MergeGroupService.get_total_capacity(db, merge_group_id)
-        return 0
+    def _overlapping_reservations(
+        db: Session,
+        table_ids: list[int],
+        reservation_date: date,
+        reservation_time: time,
+        duration_minutes: int,
+        exclude_reservation_id: int | None = None,
+    ) -> list[Reservation]:
+        """Return active reservations that overlap the given slot for any of the given tables."""
+        start_dt = datetime.combine(reservation_date, reservation_time)
+        end_dt = start_dt + timedelta(minutes=duration_minutes)
+
+        query = (
+            db.query(Reservation)
+            .filter(
+                Reservation.reservation_date == reservation_date,
+                Reservation.status.in_(["confirmed", "seated"]),
+                Reservation.tables.any(Table.id.in_(table_ids)),
+            )
+        )
+        if exclude_reservation_id:
+            query = query.filter(Reservation.id != exclude_reservation_id)
+
+        conflicts = []
+        for res in query.all():
+            res_start = datetime.combine(res.reservation_date, res.reservation_time)
+            res_end = res_start + timedelta(minutes=res.duration_minutes)
+            if start_dt < res_end and end_dt > res_start:
+                conflicts.append(res)
+        return conflicts
 
     @staticmethod
-    def _check_table_availability(
+    def _check_tables_available(
         db: Session,
-        table_id: int | None,
-        merge_group_id: int | None,
+        table_ids: list[int],
         reservation_date: date,
         reservation_time: time,
         duration_minutes: int,
         exclude_reservation_id: int | None = None,
     ) -> tuple[bool, str | None]:
-        """
-        Check if a table/merge group is available for the given time slot.
-        Returns (is_available, conflict_message).
-        """
-        # Calculate reservation time window
-        start_dt = datetime.combine(reservation_date, reservation_time)
-        end_dt = start_dt + timedelta(minutes=duration_minutes)
-
-        # Build query for conflicting reservations
-        query = db.query(Reservation).filter(
-            Reservation.reservation_date == reservation_date,
-            Reservation.status.in_(["confirmed", "seated"]),
+        conflicts = ReservationService._overlapping_reservations(
+            db, table_ids, reservation_date, reservation_time,
+            duration_minutes, exclude_reservation_id
         )
-
-        if table_id:
-            # Check if table is part of a merge group
-            table = TableService.get_table(db, table_id)
-            if table.merge_group_id:
-                # If booking a single table that's in a merge group,
-                # check both direct table bookings and merge group bookings
-                query = query.filter(
-                    or_(
-                        Reservation.table_id == table_id,
-                        Reservation.merge_group_id == table.merge_group_id,
-                    )
-                )
-            else:
-                query = query.filter(Reservation.table_id == table_id)
-        elif merge_group_id:
-            # For merge group, check bookings on the group AND individual tables
-            group = MergeGroupService.get_merge_group(db, merge_group_id)
-            table_ids = [t.id for t in group.tables]
-            query = query.filter(
-                or_(
-                    Reservation.merge_group_id == merge_group_id,
-                    Reservation.table_id.in_(table_ids),
-                )
-            )
-
-        if exclude_reservation_id:
-            query = query.filter(Reservation.id != exclude_reservation_id)
-
-        existing_reservations = query.all()
-
-        for existing in existing_reservations:
-            existing_start = datetime.combine(
-                existing.reservation_date, existing.reservation_time
-            )
-            existing_end = existing_start + timedelta(minutes=existing.duration_minutes)
-
-            # Check for overlap
-            if start_dt < existing_end and end_dt > existing_start:
-                return (
-                    False,
-                    f"Conflicts with existing reservation for {existing.guest_name} at {existing.reservation_time}",
-                )
-
+        if conflicts:
+            c = conflicts[0]
+            return False, f"Conflicts with existing reservation for {c.guest_name} at {c.reservation_time}"
         return True, None
 
     @staticmethod
     def create_reservation(db: Session, reservation: ReservationCreate) -> Reservation:
         # Validate operating hours
         is_valid, error = HoursValidationService.is_time_within_hours(
-            db,
-            reservation.reservation_date,
-            reservation.reservation_time,
+            db, reservation.reservation_date, reservation.reservation_time,
             reservation.duration_minutes,
         )
         if not is_valid:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST, detail=error
-            )
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=error)
 
-        # Validate table/merge group exists and is active
-        if reservation.table_id:
-            table = TableService.get_table(db, reservation.table_id)
+        # Validate tables exist and are active
+        tables = []
+        for tid in reservation.table_ids:
+            table = TableService.get_table(db, tid)
             if not table.is_active:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail=f"Table {table.table_number} is not active",
                 )
-        elif reservation.merge_group_id:
-            group = MergeGroupService.get_merge_group(db, reservation.merge_group_id)
-            if not group.is_active:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Merge group is not active",
-                )
+            tables.append(table)
 
-        # Check capacity
-        capacity = ReservationService._get_table_capacity(
-            db, reservation.table_id, reservation.merge_group_id
-        )
-        if reservation.party_size > capacity:
+        # Check combined capacity
+        total_capacity = sum(t.current_chairs for t in tables)
+        if reservation.party_size > total_capacity:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Party size ({reservation.party_size}) exceeds table capacity ({capacity})",
+                detail=f"Party size ({reservation.party_size}) exceeds combined table capacity ({total_capacity})",
             )
 
         # Check availability
-        is_available, conflict = ReservationService._check_table_availability(
-            db,
-            reservation.table_id,
-            reservation.merge_group_id,
-            reservation.reservation_date,
-            reservation.reservation_time,
-            reservation.duration_minutes,
+        is_available, conflict = ReservationService._check_tables_available(
+            db, reservation.table_ids, reservation.reservation_date,
+            reservation.reservation_time, reservation.duration_minutes,
         )
         if not is_available:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST, detail=conflict
-            )
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=conflict)
 
-        db_reservation = Reservation(**reservation.model_dump())
+        # Create reservation
+        db_reservation = Reservation(
+            guest_name=reservation.guest_name,
+            party_size=reservation.party_size,
+            phone_number=reservation.phone_number,
+            notes=reservation.notes,
+            reservation_date=reservation.reservation_date,
+            reservation_time=reservation.reservation_time,
+            duration_minutes=reservation.duration_minutes,
+        )
+        db_reservation.tables = tables
         db.add(db_reservation)
         db.commit()
         db.refresh(db_reservation)
@@ -191,86 +154,65 @@ class ReservationService:
         db_reservation = ReservationService.get_reservation(db, reservation_id)
         update_data = reservation.model_dump(exclude_unset=True)
 
-        # Determine the values to validate
         new_date = update_data.get("reservation_date", db_reservation.reservation_date)
         new_time = update_data.get("reservation_time", db_reservation.reservation_time)
-        new_duration = update_data.get(
-            "duration_minutes", db_reservation.duration_minutes
-        )
+        new_duration = update_data.get("duration_minutes", db_reservation.duration_minutes)
         new_party_size = update_data.get("party_size", db_reservation.party_size)
-        new_table_id = update_data.get("table_id", db_reservation.table_id)
-        new_merge_group_id = update_data.get(
-            "merge_group_id", db_reservation.merge_group_id
-        )
         new_phone = update_data.get("phone_number", db_reservation.phone_number)
 
-        # Validate phone requirement for updated party size
         if new_party_size >= 4 and not new_phone:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Phone number is required for party size of 4 or more",
             )
 
-        # Handle table assignment changes
-        if "table_id" in update_data or "merge_group_id" in update_data:
-            # Ensure exactly one is set
-            if new_table_id is not None and new_merge_group_id is not None:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Cannot assign both table_id and merge_group_id",
-                )
-            if new_table_id is None and new_merge_group_id is None:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Either table_id or merge_group_id must be provided",
-                )
+        # Handle table reassignment
+        new_table_ids = update_data.pop("table_ids", None)
+        if new_table_ids is not None:
+            tables = []
+            for tid in new_table_ids:
+                table = TableService.get_table(db, tid)
+                if not table.is_active:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"Table {table.table_number} is not active",
+                    )
+                tables.append(table)
+            db_reservation.tables = tables
+        else:
+            tables = db_reservation.tables
 
-        # Validate operating hours if date/time changed
+        # Validate hours if time changed
         if "reservation_date" in update_data or "reservation_time" in update_data:
             is_valid, error = HoursValidationService.is_time_within_hours(
                 db, new_date, new_time, new_duration
             )
             if not is_valid:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST, detail=error
-                )
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=error)
 
-        # Check capacity if party size or table changed
-        if (
-            "party_size" in update_data
-            or "table_id" in update_data
-            or "merge_group_id" in update_data
-        ):
-            capacity = ReservationService._get_table_capacity(
-                db, new_table_id, new_merge_group_id
-            )
-            if new_party_size > capacity:
+        # Validate capacity
+        if "party_size" in update_data or new_table_ids is not None:
+            total_capacity = sum(t.current_chairs for t in tables)
+            if new_party_size > total_capacity:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"Party size ({new_party_size}) exceeds table capacity ({capacity})",
+                    detail=f"Party size ({new_party_size}) exceeds combined table capacity ({total_capacity})",
                 )
 
-        # Check availability if date/time/table changed
+        # Check availability
+        check_ids = [t.id for t in tables]
         if (
             "reservation_date" in update_data
             or "reservation_time" in update_data
             or "duration_minutes" in update_data
-            or "table_id" in update_data
-            or "merge_group_id" in update_data
+            or new_table_ids is not None
         ):
-            is_available, conflict = ReservationService._check_table_availability(
-                db,
-                new_table_id,
-                new_merge_group_id,
-                new_date,
-                new_time,
-                new_duration,
+            is_available, conflict = ReservationService._check_tables_available(
+                db, check_ids, new_date, new_time, new_duration,
                 exclude_reservation_id=reservation_id,
             )
             if not is_available:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST, detail=conflict
-                )
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=conflict)
 
         for field, value in update_data.items():
             setattr(db_reservation, field, value)
@@ -300,73 +242,54 @@ class ReservationService:
         duration_minutes: int = 90,
     ) -> list[dict]:
         """
-        Find available tables for a given time slot and party size.
-        Returns a list of available options (tables and merge groups).
+        Find available tables for the given slot and party size.
+        Returns individual tables that fit, plus combinations of tables
+        that together can seat the party when no single table can.
         """
-        # First validate the time is within operating hours
         is_valid, error = HoursValidationService.is_time_within_hours(
             db, reservation_date, reservation_time, duration_minutes
         )
         if not is_valid:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST, detail=error
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=error)
+
+        all_tables = db.query(Table).filter(Table.is_active == True).all()
+
+        # Find which tables are free for this slot
+        free_tables = []
+        for table in all_tables:
+            conflicts = ReservationService._overlapping_reservations(
+                db, [table.id], reservation_date, reservation_time, duration_minutes
             )
+            if not conflicts:
+                free_tables.append(table)
 
-        available = []
+        available: list[dict] = []
 
-        # Check individual tables
-        tables = db.query(Table).filter(
-            Table.is_active == True,
-            Table.current_chairs >= party_size,
-        ).all()
-
-        for table in tables:
-            is_available, _ = ReservationService._check_table_availability(
-                db,
-                table.id,
-                None,
-                reservation_date,
-                reservation_time,
-                duration_minutes,
-            )
-            if is_available:
+        # Single tables that fit
+        for table in free_tables:
+            if table.current_chairs >= party_size:
                 available.append({
                     "type": "table",
-                    "id": table.id,
-                    "table_number": table.table_number,
+                    "table_ids": [table.id],
+                    "table_numbers": [table.table_number],
                     "capacity": table.current_chairs,
-                    "x_position": table.x_position,
-                    "y_position": table.y_position,
                 })
 
-        # Check merge groups
-        groups = db.query(MergeGroup).filter(MergeGroup.is_active == True).all()
-        for group in groups:
-            total_capacity = sum(t.current_chairs for t in group.tables)
-            if total_capacity >= party_size:
-                is_available, _ = ReservationService._check_table_availability(
-                    db,
-                    None,
-                    group.id,
-                    reservation_date,
-                    reservation_time,
-                    duration_minutes,
-                )
-                if is_available:
-                    available.append({
-                        "type": "merge_group",
-                        "id": group.id,
-                        "name": group.name,
-                        "capacity": total_capacity,
-                        "tables": [
-                            {
-                                "id": t.id,
-                                "table_number": t.table_number,
-                                "x_position": t.x_position,
-                                "y_position": t.y_position,
-                            }
-                            for t in group.tables
-                        ],
-                    })
+        # Combinations of free tables that together fit the party
+        # (only suggest if no single table fits, to keep the list clean)
+        if not any(o["type"] == "table" for o in available):
+            for r in range(2, len(free_tables) + 1):
+                for combo in combinations(free_tables, r):
+                    total = sum(t.current_chairs for t in combo)
+                    if total >= party_size:
+                        available.append({
+                            "type": "combo",
+                            "table_ids": [t.id for t in combo],
+                            "table_numbers": [t.table_number for t in combo],
+                            "capacity": total,
+                        })
+                # Stop after finding combos of the smallest sufficient size
+                if any(o["type"] == "combo" for o in available):
+                    break
 
         return available

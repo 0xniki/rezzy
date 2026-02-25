@@ -27,11 +27,10 @@ class RestaurantConfigResponse(RestaurantConfigBase):
 # Table Schemas
 class TableBase(BaseModel):
     table_number: str = Field(..., min_length=1, max_length=50)
-    x_position: float
-    y_position: float
+    x_position: float = 0
+    y_position: float = 0
     default_chairs: int = Field(..., gt=0)
     max_chairs: int = Field(..., gt=0)
-    is_mergeable: bool = True
     is_active: bool = True
 
     @model_validator(mode="after")
@@ -52,36 +51,12 @@ class TableUpdate(BaseModel):
     default_chairs: Optional[int] = Field(None, gt=0)
     max_chairs: Optional[int] = Field(None, gt=0)
     current_chairs: Optional[int] = Field(None, ge=0)
-    is_mergeable: Optional[bool] = None
     is_active: Optional[bool] = None
 
 
 class TableResponse(TableBase):
     id: int
     current_chairs: int
-    merge_group_id: Optional[int] = None
-
-    model_config = {"from_attributes": True}
-
-
-# Merge Group Schemas
-class MergeGroupBase(BaseModel):
-    name: Optional[str] = Field(None, max_length=100)
-
-
-class MergeGroupCreate(MergeGroupBase):
-    table_ids: list[int] = Field(..., min_length=2)
-
-
-class MergeGroupUpdate(BaseModel):
-    name: Optional[str] = Field(None, max_length=100)
-    is_active: Optional[bool] = None
-
-
-class MergeGroupResponse(MergeGroupBase):
-    id: int
-    is_active: bool
-    tables: list[TableResponse] = []
 
     model_config = {"from_attributes": True}
 
@@ -89,14 +64,17 @@ class MergeGroupResponse(MergeGroupBase):
 # Operating Hours Schemas
 class OperatingHoursBase(BaseModel):
     day_of_week: int = Field(..., ge=0, le=6)
-    open_time: time
-    close_time: time
+    open_time: Optional[time] = None
+    close_time: Optional[time] = None
     is_closed: bool = False
 
     @model_validator(mode="after")
     def validate_times(self):
-        if not self.is_closed and self.open_time >= self.close_time:
-            raise ValueError("open_time must be before close_time when not closed")
+        if not self.is_closed:
+            if self.open_time is None or self.close_time is None:
+                raise ValueError("open_time and close_time are required when not closed")
+            if self.open_time >= self.close_time:
+                raise ValueError("open_time must be before close_time when not closed")
         return self
 
 
@@ -169,16 +147,7 @@ class ReservationBase(BaseModel):
 
 
 class ReservationCreate(ReservationBase):
-    table_id: Optional[int] = None
-    merge_group_id: Optional[int] = None
-
-    @model_validator(mode="after")
-    def validate_table_assignment(self):
-        if self.table_id is None and self.merge_group_id is None:
-            raise ValueError("Either table_id or merge_group_id must be provided")
-        if self.table_id is not None and self.merge_group_id is not None:
-            raise ValueError("Cannot assign both table_id and merge_group_id")
-        return self
+    table_ids: list[int] = Field(..., min_length=1)
 
 
 class ReservationUpdate(BaseModel):
@@ -189,8 +158,7 @@ class ReservationUpdate(BaseModel):
     reservation_date: Optional[date] = None
     reservation_time: Optional[time] = None
     duration_minutes: Optional[int] = Field(None, gt=0)
-    table_id: Optional[int] = None
-    merge_group_id: Optional[int] = None
+    table_ids: Optional[list[int]] = Field(None, min_length=1)
     status: Optional[str] = None
 
     @field_validator("status")
@@ -205,12 +173,17 @@ class ReservationUpdate(BaseModel):
 
 class ReservationResponse(ReservationBase):
     id: int
-    table_id: Optional[int] = None
-    merge_group_id: Optional[int] = None
+    table_ids: list[int] = []
+    tables: list[TableResponse] = []
     status: str
-    table: Optional[TableResponse] = None
 
     model_config = {"from_attributes": True}
+
+    @model_validator(mode="after")
+    def populate_table_ids(self):
+        if self.tables and not self.table_ids:
+            self.table_ids = [t.id for t in self.tables]
+        return self
 
 
 # Chair Rearrangement Schema

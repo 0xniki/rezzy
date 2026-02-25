@@ -6,12 +6,9 @@ from rezzy.schemas import (
     TableCreate,
     TableUpdate,
     TableResponse,
-    MergeGroupCreate,
-    MergeGroupUpdate,
-    MergeGroupResponse,
     ChairRearrangement,
 )
-from rezzy.services import TableService, MergeGroupService
+from rezzy.services import TableService
 
 router = APIRouter(prefix="/tables", tags=["Tables"])
 
@@ -53,47 +50,5 @@ def delete_table(table_id: int, db: Session = Depends(get_db)):
 def rearrange_chairs(
     rearrangements: list[ChairRearrangement], db: Session = Depends(get_db)
 ):
-    """
-    Rearrange chairs across multiple tables.
-    Validates against restaurant's extra chair pool.
-    """
+    """Rearrange chairs across multiple tables."""
     return TableService.rearrange_chairs(db, rearrangements)
-
-
-# Merge Group endpoints
-merge_router = APIRouter(prefix="/merge-groups", tags=["Merge Groups"])
-
-
-@merge_router.get("", response_model=list[MergeGroupResponse])
-def get_merge_groups(
-    active_only: bool = Query(True, description="Filter to active groups only"),
-    db: Session = Depends(get_db),
-):
-    """Get all merge groups"""
-    return MergeGroupService.get_merge_groups(db, active_only)
-
-
-@merge_router.get("/{group_id}", response_model=MergeGroupResponse)
-def get_merge_group(group_id: int, db: Session = Depends(get_db)):
-    """Get a specific merge group"""
-    return MergeGroupService.get_merge_group(db, group_id)
-
-
-@merge_router.post("", response_model=MergeGroupResponse, status_code=201)
-def create_merge_group(group: MergeGroupCreate, db: Session = Depends(get_db)):
-    """Create a new merge group from existing tables"""
-    return MergeGroupService.create_merge_group(db, group)
-
-
-@merge_router.patch("/{group_id}", response_model=MergeGroupResponse)
-def update_merge_group(
-    group_id: int, group: MergeGroupUpdate, db: Session = Depends(get_db)
-):
-    """Update a merge group"""
-    return MergeGroupService.update_merge_group(db, group_id, group)
-
-
-@merge_router.delete("/{group_id}", status_code=204)
-def delete_merge_group(group_id: int, db: Session = Depends(get_db)):
-    """Unmerge tables and delete the group"""
-    MergeGroupService.delete_merge_group(db, group_id)

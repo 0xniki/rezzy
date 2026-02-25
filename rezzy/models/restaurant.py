@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Float, Boolean, Date, Time, ForeignKey, Text, CheckConstraint
+from sqlalchemy import Column, Integer, String, Float, Boolean, Date, Time, ForeignKey, Text, CheckConstraint, Table as SATable
 from sqlalchemy.orm import relationship
 from rezzy.core.database import Base
 
@@ -9,7 +9,7 @@ class RestaurantConfig(Base):
 
     id = Column(Integer, primary_key=True, default=1)
     name = Column(String(255), nullable=False)
-    total_extra_chairs = Column(Integer, nullable=False, default=0)  # Unassigned chairs available
+    total_extra_chairs = Column(Integer, nullable=False, default=0)
 
     __table_args__ = (
         CheckConstraint("id = 1", name="single_row_constraint"),
@@ -17,31 +17,32 @@ class RestaurantConfig(Base):
     )
 
 
+# Join table for reservation <-> tables (many-to-many)
+reservation_tables = SATable(
+    "reservation_tables",
+    Base.metadata,
+    Column("reservation_id", Integer, ForeignKey("reservations.id", ondelete="CASCADE"), primary_key=True),
+    Column("table_id", Integer, ForeignKey("tables.id", ondelete="CASCADE"), primary_key=True),
+)
+
+
 class Table(Base):
     """Restaurant tables with position and chair configuration"""
     __tablename__ = "tables"
 
     id = Column(Integer, primary_key=True, index=True)
-    table_number = Column(String(50), unique=True, nullable=False)  # e.g., "T1", "A1", "Patio-3"
+    table_number = Column(String(50), unique=True, nullable=False)
 
-    # Position for frontend layout
-    x_position = Column(Float, nullable=False)
-    y_position = Column(Float, nullable=False)
+    x_position = Column(Float, nullable=False, default=0)
+    y_position = Column(Float, nullable=False, default=0)
 
-    # Chair configuration
     default_chairs = Column(Integer, nullable=False)
     max_chairs = Column(Integer, nullable=False)
-    current_chairs = Column(Integer, nullable=False)  # Tracks actual chairs currently at table
+    current_chairs = Column(Integer, nullable=False)
 
-    # For table merging
-    is_mergeable = Column(Boolean, default=True)
-    merge_group_id = Column(Integer, ForeignKey("merge_groups.id"), nullable=True)
+    is_active = Column(Boolean, default=True)
 
-    # Status
-    is_active = Column(Boolean, default=True)  # Can be deactivated without deletion
-
-    reservations = relationship("Reservation", back_populates="table")
-    merge_group = relationship("MergeGroup", back_populates="tables")
+    reservations = relationship("Reservation", secondary=reservation_tables, back_populates="tables")
 
     __table_args__ = (
         CheckConstraint("default_chairs > 0", name="positive_default_chairs"),
@@ -51,27 +52,15 @@ class Table(Base):
     )
 
 
-class MergeGroup(Base):
-    """Groups of merged tables"""
-    __tablename__ = "merge_groups"
-
-    id = Column(Integer, primary_key=True, index=True)
-    name = Column(String(100), nullable=True)  # Optional name like "Large Party Area"
-    is_active = Column(Boolean, default=True)
-
-    tables = relationship("Table", back_populates="merge_group")
-    reservations = relationship("Reservation", back_populates="merge_group")
-
-
 class OperatingHours(Base):
     """Regular weekly operating hours (day 0 = Monday, 6 = Sunday)"""
     __tablename__ = "operating_hours"
 
     id = Column(Integer, primary_key=True, index=True)
-    day_of_week = Column(Integer, nullable=False)  # 0-6 (Monday-Sunday)
-    open_time = Column(Time, nullable=False)
-    close_time = Column(Time, nullable=False)
-    is_closed = Column(Boolean, default=False)  # For days restaurant is regularly closed
+    day_of_week = Column(Integer, nullable=False)
+    open_time = Column(Time, nullable=True)
+    close_time = Column(Time, nullable=True)
+    is_closed = Column(Boolean, default=False)
 
     __table_args__ = (
         CheckConstraint("day_of_week >= 0 AND day_of_week <= 6", name="valid_day_of_week"),
@@ -84,10 +73,10 @@ class SpecialHours(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     date = Column(Date, nullable=False, unique=True, index=True)
-    open_time = Column(Time, nullable=True)  # Null if closed
+    open_time = Column(Time, nullable=True)
     close_time = Column(Time, nullable=True)
     is_closed = Column(Boolean, default=False)
-    reason = Column(String(255), nullable=True)  # e.g., "Christmas Day", "Private Event"
+    reason = Column(String(255), nullable=True)
 
 
 class Reservation(Base):
@@ -96,35 +85,22 @@ class Reservation(Base):
 
     id = Column(Integer, primary_key=True, index=True)
 
-    # Customer info
     guest_name = Column(String(255), nullable=False)
     party_size = Column(Integer, nullable=False)
-    phone_number = Column(String(20), nullable=True)  # Required if party_size >= 4
+    phone_number = Column(String(20), nullable=True)
     notes = Column(Text, nullable=True)
 
-    # Timing
     reservation_date = Column(Date, nullable=False, index=True)
     reservation_time = Column(Time, nullable=False)
     duration_minutes = Column(Integer, nullable=False, default=90)
 
-    # Table assignment (either single table or merge group)
-    table_id = Column(Integer, ForeignKey("tables.id"), nullable=True)
-    merge_group_id = Column(Integer, ForeignKey("merge_groups.id"), nullable=True)
+    status = Column(String(20), nullable=False, default="confirmed")
 
-    # Status
-    status = Column(String(20), nullable=False, default="confirmed")  # confirmed, seated, completed, cancelled, no_show
-
-    table = relationship("Table", back_populates="reservations")
-    merge_group = relationship("MergeGroup", back_populates="reservations")
+    tables = relationship("Table", secondary=reservation_tables, back_populates="reservations")
 
     __table_args__ = (
         CheckConstraint("party_size > 0", name="positive_party_size"),
         CheckConstraint("duration_minutes > 0", name="positive_duration"),
-        CheckConstraint(
-            "(table_id IS NOT NULL AND merge_group_id IS NULL) OR "
-            "(table_id IS NULL AND merge_group_id IS NOT NULL)",
-            name="exactly_one_table_assignment"
-        ),
         CheckConstraint(
             "party_size < 4 OR phone_number IS NOT NULL",
             name="phone_required_for_large_party"

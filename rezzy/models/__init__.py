@@ -1,17 +1,19 @@
 from rezzy.models.restaurant import (
     RestaurantConfig,
     Table,
-    MergeGroup,
     OperatingHours,
     SpecialHours,
     Reservation,
+    reservation_tables,
 )
+from rezzy.models.user import User
 
 __all__ = [
     "RestaurantConfig",
     "Table",
-    "MergeGroup",
     "OperatingHours",
     "SpecialHours",
     "Reservation",
+    "reservation_tables",
+    "User",
 ]
