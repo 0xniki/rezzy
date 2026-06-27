@@ -552,8 +552,37 @@ function EditReservationModal({
     status: reservation.status as ReservationStatus,
   });
   const [error, setError] = useState('');
+  const [availableOptions, setAvailableOptions] = useState<AvailableOption[]>([]);
+  const [searchedAvail, setSearchedAvail] = useState(false);
+  const [selectedOption, setSelectedOption] = useState<AvailableOption | null>(null);
 
-  const set = (patch: Partial<typeof form>) => setForm((f) => ({ ...f, ...patch }));
+  const resetAvailability = () => {
+    setSearchedAvail(false);
+    setAvailableOptions([]);
+    setSelectedOption(null);
+  };
+
+  const set = (patch: Partial<typeof form>, resetsTables = false) => {
+    setForm((f) => ({ ...f, ...patch }));
+    if (resetsTables) resetAvailability();
+  };
+
+  const searchMutation = useMutation({
+    mutationFn: () =>
+      reservationsApi.getAvailable({
+        reservation_date: form.reservation_date,
+        reservation_time: form.reservation_time,
+        party_size: form.party_size,
+        duration_minutes: form.duration_minutes,
+        exclude_reservation_id: reservation.id,
+      }),
+    onSuccess: (data) => {
+      setAvailableOptions(data);
+      setSearchedAvail(true);
+      setSelectedOption(null);
+    },
+    onError: (e: Error) => setError(e.message),
+  });
 
   const mutation = useMutation({
     mutationFn: () =>
@@ -561,6 +590,7 @@ function EditReservationModal({
         ...form,
         phone_number: form.phone_number || null,
         notes: form.notes || null,
+        ...(selectedOption ? { table_ids: selectedOption.table_ids } : {}),
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['reservations'] });
@@ -608,7 +638,7 @@ function EditReservationModal({
             type="number"
             min="1"
             value={form.party_size}
-            onChange={(e) => set({ party_size: parseInt(e.target.value) || 1 })}
+            onChange={(e) => set({ party_size: parseInt(e.target.value) || 1 }, true)}
           />
         </div>
 
@@ -617,12 +647,12 @@ function EditReservationModal({
             label="Date"
             type="date"
             value={form.reservation_date}
-            onChange={(e) => set({ reservation_date: e.target.value })}
+            onChange={(e) => set({ reservation_date: e.target.value }, true)}
           />
           <TimeSelect
             label="Time"
             value={form.reservation_time}
-            onChange={(v) => set({ reservation_time: v })}
+            onChange={(v) => set({ reservation_time: v }, true)}
           />
           <Input
             label="Duration (min)"
@@ -630,7 +660,7 @@ function EditReservationModal({
             min="30"
             step="15"
             value={form.duration_minutes}
-            onChange={(e) => set({ duration_minutes: parseInt(e.target.value) || 90 })}
+            onChange={(e) => set({ duration_minutes: parseInt(e.target.value) || 90 }, true)}
           />
         </div>
 
@@ -654,13 +684,75 @@ function EditReservationModal({
           onChange={(e) => set({ status: e.target.value as ReservationStatus })}
         />
 
-        {/* Read-only table display */}
-        <div className="flex items-center gap-2 text-sm text-gray-500 bg-gray-50 rounded-xl px-4 py-3">
-          <LayoutGrid size={14} className="shrink-0" />
-          <span>{tableLabel}</span>
-          <span className="text-xs text-gray-400 ml-auto">
-            To change tables, cancel and create a new reservation
-          </span>
+        <div className="border border-gray-200 rounded-xl p-4 bg-gray-50">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2 text-sm text-gray-600">
+              <LayoutGrid size={14} className="shrink-0" />
+              <span>Current: {tableLabel}</span>
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => searchMutation.mutate()}
+              loading={searchMutation.isPending}
+            >
+              <Search size={14} />
+              Find Tables
+            </Button>
+          </div>
+
+          {searchedAvail && availableOptions.length === 0 && (
+            <Alert variant="warning">No tables available for this time slot</Alert>
+          )}
+
+          {availableOptions.length > 0 && (
+            <div className="grid grid-cols-2 gap-2">
+              {availableOptions.map((opt) => {
+                const isSelected =
+                  selectedOption !== null &&
+                  JSON.stringify(selectedOption.table_ids) === JSON.stringify(opt.table_ids);
+                const isCombo = opt.type === 'combo';
+                const label = opt.table_numbers.join(' + ');
+
+                return (
+                  <button
+                    key={opt.table_ids.join('-')}
+                    type="button"
+                    onClick={() => setSelectedOption(opt)}
+                    className={`border rounded-xl p-3 text-left transition-colors ${
+                      isSelected
+                        ? 'border-blue-500 bg-blue-50'
+                        : 'border-gray-200 bg-white hover:border-gray-300'
+                    }`}
+                  >
+                    <div className="flex items-center gap-1.5 mb-1">
+                      {isCombo ? (
+                        <LayoutGrid size={13} className="text-purple-500 shrink-0" />
+                      ) : (
+                        <Armchair size={13} className="text-blue-500 shrink-0" />
+                      )}
+                      <span className="font-medium text-gray-900 text-sm">
+                        {isCombo ? `Tables ${label}` : `Table ${label}`}
+                      </span>
+                    </div>
+                    <div className="text-xs text-gray-500">
+                      {opt.capacity} seats{isCombo ? ' combined' : ''}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          {selectedOption && (
+            <p className="text-xs text-blue-600 mt-2 font-medium">
+              New assignment:{' '}
+              {selectedOption.type === 'combo'
+                ? `Tables ${selectedOption.table_numbers.join(' + ')}`
+                : `Table ${selectedOption.table_numbers[0]}`}
+            </p>
+          )}
         </div>
 
         <div className="flex justify-end gap-3 pt-2">

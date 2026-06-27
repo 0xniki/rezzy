@@ -1,33 +1,45 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { configApi } from '../../api/config';
 import Button from '../ui/Button';
 import Input from '../ui/Input';
 import Alert from '../ui/Alert';
 import { Store, ChevronRight } from 'lucide-react';
+import type { RestaurantConfig } from '../../types';
 
 interface Props {
   onNext: () => void;
 }
 
 export default function SetupRestaurantInfo({ onNext }: Props) {
-  const [name, setName] = useState('');
-  const [extraChairs, setExtraChairs] = useState('0');
-  const [error, setError] = useState('');
-
   const { data: existingConfig } = useQuery({
     queryKey: ['config'],
     queryFn: configApi.get,
     retry: false,
   });
 
-  // Pre-fill if config already exists
-  useEffect(() => {
-    if (existingConfig) {
-      setName(existingConfig.name);
-      setExtraChairs(String(existingConfig.total_extra_chairs));
-    }
-  }, [existingConfig]);
+  const formKey = existingConfig
+    ? `${existingConfig.id}-${existingConfig.name}-${existingConfig.total_extra_chairs}`
+    : 'new';
+
+  return (
+    <SetupRestaurantInfoForm
+      key={formKey}
+      existingConfig={existingConfig}
+      onNext={onNext}
+    />
+  );
+}
+
+function SetupRestaurantInfoForm({
+  existingConfig,
+  onNext,
+}: Props & { existingConfig?: RestaurantConfig }) {
+  const [name, setName] = useState(existingConfig?.name ?? '');
+  const [extraChairs, setExtraChairs] = useState(
+    String(existingConfig?.total_extra_chairs ?? 0)
+  );
+  const [error, setError] = useState('');
 
   const createMutation = useMutation({
     mutationFn: () =>

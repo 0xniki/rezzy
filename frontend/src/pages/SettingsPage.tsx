@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { configApi } from '../api/config';
 import { Card, CardHeader, CardBody } from '../components/ui/Card';
@@ -6,23 +6,29 @@ import Button from '../components/ui/Button';
 import Input from '../components/ui/Input';
 import Alert from '../components/ui/Alert';
 import { Settings, Save } from 'lucide-react';
+import type { RestaurantConfig } from '../types';
 
 export default function SettingsPage() {
-  const qc = useQueryClient();
-  const [form, setForm] = useState({ name: '', total_extra_chairs: 0 });
-  const [saveSuccess, setSaveSuccess] = useState(false);
-  const [error, setError] = useState('');
-
   const { data: config } = useQuery({
     queryKey: ['config'],
     queryFn: configApi.get,
   });
 
-  useEffect(() => {
-    if (config) {
-      setForm({ name: config.name, total_extra_chairs: config.total_extra_chairs });
-    }
-  }, [config]);
+  const formKey = config
+    ? `${config.id}-${config.name}-${config.total_extra_chairs}`
+    : 'empty';
+
+  return <SettingsForm key={formKey} config={config} />;
+}
+
+function SettingsForm({ config }: { config?: RestaurantConfig }) {
+  const qc = useQueryClient();
+  const [form, setForm] = useState({
+    name: config?.name ?? '',
+    total_extra_chairs: config?.total_extra_chairs ?? 0,
+  });
+  const [saveSuccess, setSaveSuccess] = useState(false);
+  const [error, setError] = useState('');
 
   const mutation = useMutation({
     mutationFn: () => configApi.update(form),

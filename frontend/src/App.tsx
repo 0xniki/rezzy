@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { AuthProvider, useAuth } from './context/AuthContext';
+import { AuthProvider } from './context/AuthContext';
+import { useAuth } from './context/useAuth';
 import { useSetupStatus } from './hooks/useSetupStatus';
 import SetupWizard from './components/setup/SetupWizard';
 import AppLayout from './components/layout/AppLayout';
@@ -10,6 +11,7 @@ import TablesPage from './pages/TablesPage';
 import HoursPage from './pages/HoursPage';
 import SpecialHoursPage from './pages/SpecialHoursPage';
 import SettingsPage from './pages/SettingsPage';
+import AdminUsersPage from './pages/AdminUsersPage';
 
 const qc = new QueryClient({
   defaultOptions: {
@@ -24,6 +26,12 @@ const qc = new QueryClient({
 function RequireAuth({ children }: { children: React.ReactNode }) {
   const { token } = useAuth();
   if (!token) return <Navigate to="/login" replace />;
+  return <>{children}</>;
+}
+
+function RequireAdmin({ children }: { children: React.ReactNode }) {
+  const { role } = useAuth();
+  if (role !== 'admin') return <Navigate to="/reservations" replace />;
   return <>{children}</>;
 }
 
@@ -68,6 +76,14 @@ function AppRouter() {
         <Route path="hours" element={<HoursPage />} />
         <Route path="special-hours" element={<SpecialHoursPage />} />
         <Route path="settings" element={<SettingsPage />} />
+        <Route
+          path="admin/users"
+          element={
+            <RequireAdmin>
+              <AdminUsersPage />
+            </RequireAdmin>
+          }
+        />
       </Route>
     </Routes>
   );

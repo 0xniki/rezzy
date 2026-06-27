@@ -56,11 +56,17 @@ class OperatingHoursService:
         new_close = update_data.get("close_time", db_hours.close_time)
         new_closed = update_data.get("is_closed", db_hours.is_closed)
 
-        if not new_closed and new_open >= new_close:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="open_time must be before close_time",
-            )
+        if not new_closed:
+            if new_open is None or new_close is None:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="open_time and close_time required when not closed",
+                )
+            if new_open >= new_close:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="open_time must be before close_time",
+                )
 
         for field, value in update_data.items():
             setattr(db_hours, field, value)
@@ -73,6 +79,30 @@ class OperatingHoursService:
         db: Session, hours_list: list[OperatingHoursCreate]
     ) -> list[OperatingHours]:
         """Create operating hours for multiple days at once"""
+        requested_days = [hours.day_of_week for hours in hours_list]
+        duplicate_days = {
+            day for day in requested_days if requested_days.count(day) > 1
+        }
+        if duplicate_days:
+            days = ", ".join(str(day) for day in sorted(duplicate_days))
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Duplicate operating hours in request for day(s): {days}",
+            )
+
+        existing_days = {
+            day
+            for (day,) in db.query(OperatingHours.day_of_week)
+            .filter(OperatingHours.day_of_week.in_(requested_days))
+            .all()
+        }
+        if existing_days:
+            days = ", ".join(str(day) for day in sorted(existing_days))
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Operating hours already exist for day(s): {days}. Use update instead.",
+            )
+
         created = []
         for hours in hours_list:
             db_hours = OperatingHours(**hours.model_dump())

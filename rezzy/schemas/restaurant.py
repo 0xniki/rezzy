@@ -1,6 +1,22 @@
-from datetime import date, time
+from datetime import date, time, datetime
 from typing import Optional
 from pydantic import BaseModel, Field, field_validator, model_validator
+
+
+class UserCreate(BaseModel):
+    username: str = Field(..., min_length=3, max_length=100)
+    password: str = Field(..., min_length=8, max_length=200)
+
+
+class UserResponse(BaseModel):
+    id: int
+    username: str
+    role: str
+    is_active: bool
+    created_at: datetime | None = None
+    approved_at: datetime | None = None
+
+    model_config = {"from_attributes": True}
 
 
 # Restaurant Config Schemas
@@ -41,7 +57,7 @@ class TableBase(BaseModel):
 
 
 class TableCreate(TableBase):
-    pass
+    model_config = {"extra": "forbid"}
 
 
 class TableUpdate(BaseModel):
@@ -50,8 +66,9 @@ class TableUpdate(BaseModel):
     y_position: Optional[float] = None
     default_chairs: Optional[int] = Field(None, gt=0)
     max_chairs: Optional[int] = Field(None, gt=0)
-    current_chairs: Optional[int] = Field(None, ge=0)
     is_active: Optional[bool] = None
+
+    model_config = {"extra": "forbid"}
 
 
 class TableResponse(TableBase):
@@ -176,6 +193,8 @@ class ReservationResponse(ReservationBase):
     table_ids: list[int] = []
     tables: list[TableResponse] = []
     status: str
+    created_by_user_id: Optional[int] = None
+    created_by_username: Optional[str] = None
 
     model_config = {"from_attributes": True}
 

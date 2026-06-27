@@ -19,6 +19,7 @@ export const reservationsApi = {
     reservation_time: string;
     party_size: number;
     duration_minutes?: number;
+    exclude_reservation_id?: number;
   }) =>
     client
       .get<AvailableOption[]>('/reservations/available', { params })

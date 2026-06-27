@@ -95,8 +95,14 @@ class Reservation(Base):
     duration_minutes = Column(Integer, nullable=False, default=90)
 
     status = Column(String(20), nullable=False, default="confirmed")
+    created_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
 
     tables = relationship("Table", secondary=reservation_tables, back_populates="reservations")
+    created_by = relationship("User", foreign_keys=[created_by_user_id])
+
+    @property
+    def created_by_username(self) -> str | None:
+        return self.created_by.username if self.created_by else None
 
     __table_args__ = (
         CheckConstraint("party_size > 0", name="positive_party_size"),

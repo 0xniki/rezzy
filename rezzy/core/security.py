@@ -8,8 +8,8 @@ from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 
 from rezzy.core.database import get_db
+from rezzy.core.config import get_settings
 
-SECRET_KEY = "rezzy-secret-change-in-production"
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 12  # 12 hours
 
@@ -32,7 +32,11 @@ def verify_password(plain: str, hashed: str) -> bool:
 
 def create_access_token(username: str) -> str:
     expire = datetime.now(timezone.utc) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    return jwt.encode({"sub": username, "exp": expire}, SECRET_KEY, algorithm=ALGORITHM)
+    return jwt.encode(
+        {"sub": username, "exp": expire},
+        get_settings().secret_key,
+        algorithm=ALGORITHM,
+    )
 
 
 def get_current_user(
@@ -47,7 +51,7 @@ def get_current_user(
         headers={"WWW-Authenticate": "Bearer"},
     )
     try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        payload = jwt.decode(token, get_settings().secret_key, algorithms=[ALGORITHM])
         username: str | None = payload.get("sub")
         if username is None:
             raise credentials_exc
@@ -58,3 +62,12 @@ def get_current_user(
     if user is None:
         raise credentials_exc
     return user
+
+
+def get_current_admin(current_user=Depends(get_current_user)):
+    if current_user.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin privileges required",
+        )
+    return current_user

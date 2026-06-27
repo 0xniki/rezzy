@@ -15,6 +15,18 @@ export interface RestaurantConfigUpdate {
   total_extra_chairs?: number;
 }
 
+// Users
+export type UserRole = 'admin' | 'user';
+
+export interface User {
+  id: number;
+  username: string;
+  role: UserRole;
+  is_active: boolean;
+  created_at: string | null;
+  approved_at: string | null;
+}
+
 // Tables
 export interface Table {
   id: number;
@@ -33,7 +45,6 @@ export interface TableCreate {
   y_position?: number;
   default_chairs: number;
   max_chairs: number;
-  current_chairs?: number;
 }
 
 export interface TableUpdate {
@@ -42,7 +53,6 @@ export interface TableUpdate {
   y_position?: number;
   default_chairs?: number;
   max_chairs?: number;
-  current_chairs?: number;
   is_active?: boolean;
 }
 
@@ -142,7 +152,8 @@ export interface AvailableOption {
 }
 
 export interface ChairRearrangement {
-  table_adjustments: { table_id: number; chair_delta: number }[];
+  table_id: number;
+  new_chair_count: number;
 }
 
 // Utility

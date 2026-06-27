@@ -23,6 +23,7 @@ client.interceptors.response.use(
       // Clear stale token and bounce to login
       localStorage.removeItem(TOKEN_KEY);
       localStorage.removeItem('rezzy_username');
+      localStorage.removeItem('rezzy_role');
       window.location.href = '/login';
     }
     const msg =

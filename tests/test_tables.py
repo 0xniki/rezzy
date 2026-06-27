@@ -21,7 +21,6 @@ class TestTables:
         assert data["default_chairs"] == 4
         assert data["max_chairs"] == 8
         assert data["current_chairs"] == 4  # Defaults to default_chairs
-        assert data["is_mergeable"] is True
         assert data["is_active"] is True
 
     def test_create_table_duplicate_number_fails(self, client, sample_table):
@@ -90,18 +89,30 @@ class TestTables:
         assert data["x_position"] == 50.0
         assert data["y_position"] == 100.0
 
-    def test_update_table_chairs(self, client, sample_table):
+    def test_update_table_current_chairs_rejected(self, client, sample_table):
         response = client.patch(
             f"/tables/{sample_table['id']}",
             json={"current_chairs": 6},
         )
-        assert response.status_code == 200
-        assert response.json()["current_chairs"] == 6
+        assert response.status_code == 422
 
-    def test_update_table_current_exceeds_max_fails(self, client, sample_table):
+    def test_update_table_duplicate_number_fails(self, client, sample_tables):
+        response = client.patch(
+            f"/tables/{sample_tables[1]['id']}",
+            json={"table_number": sample_tables[0]["table_number"]},
+        )
+        assert response.status_code == 400
+        assert "already exists" in response.json()["detail"]
+
+    def test_update_table_max_below_current_fails(self, client, sample_table):
+        client.post(
+            "/tables/rearrange-chairs",
+            json=[{"table_id": sample_table["id"], "new_chair_count": 6}],
+        )
+
         response = client.patch(
             f"/tables/{sample_table['id']}",
-            json={"current_chairs": 10},  # Max is 6
+            json={"max_chairs": 5},
         )
         assert response.status_code == 400
         assert "cannot exceed" in response.json()["detail"]
@@ -185,116 +196,3 @@ class TestChairRearrangement:
         )
         assert response.status_code == 400
         assert "Not enough extra chairs" in response.json()["detail"]
-
-
-class TestMergeGroups:
-    def test_create_merge_group(self, client, sample_tables):
-        response = client.post(
-            "/merge-groups",
-            json={
-                "name": "Large Party Section",
-                "table_ids": [sample_tables[0]["id"], sample_tables[1]["id"]],
-            },
-        )
-        assert response.status_code == 201
-        data = response.json()
-        assert data["name"] == "Large Party Section"
-        assert len(data["tables"]) == 2
-        assert data["is_active"] is True
-
-    def test_create_merge_group_minimum_tables(self, client, sample_table):
-        response = client.post(
-            "/merge-groups",
-            json={"table_ids": [sample_table["id"]]},  # Only one table
-        )
-        assert response.status_code == 422
-
-    def test_create_merge_group_unmergeable_table_fails(self, client, restaurant_config):
-        # Create an unmergeable table
-        table = client.post(
-            "/tables",
-            json={
-                "table_number": "Bar1",
-                "x_position": 0,
-                "y_position": 0,
-                "default_chairs": 2,
-                "max_chairs": 2,
-                "is_mergeable": False,
-            },
-        ).json()
-
-        table2 = client.post(
-            "/tables",
-            json={
-                "table_number": "Bar2",
-                "x_position": 5,
-                "y_position": 0,
-                "default_chairs": 2,
-                "max_chairs": 2,
-            },
-        ).json()
-
-        response = client.post(
-            "/merge-groups",
-            json={"table_ids": [table["id"], table2["id"]]},
-        )
-        assert response.status_code == 400
-        assert "not mergeable" in response.json()["detail"]
-
-    def test_create_merge_group_table_already_merged_fails(self, client, sample_tables):
-        # Create first merge group
-        client.post(
-            "/merge-groups",
-            json={"table_ids": [sample_tables[0]["id"], sample_tables[1]["id"]]},
-        )
-
-        # Try to add same table to another group
-        response = client.post(
-            "/merge-groups",
-            json={"table_ids": [sample_tables[0]["id"], sample_tables[2]["id"]]},
-        )
-        assert response.status_code == 400
-        assert "already in a merge group" in response.json()["detail"]
-
-    def test_get_merge_groups(self, client, sample_tables):
-        client.post(
-            "/merge-groups",
-            json={"table_ids": [sample_tables[0]["id"], sample_tables[1]["id"]]},
-        )
-        client.post(
-            "/merge-groups",
-            json={"name": "Another Group", "table_ids": [sample_tables[2]["id"], sample_tables[0]["id"]]},
-        )
-
-        # Second should fail since T1 is already in a group
-        response = client.get("/merge-groups")
-        assert response.status_code == 200
-        assert len(response.json()) == 1
-
-    def test_update_merge_group(self, client, sample_tables):
-        group = client.post(
-            "/merge-groups",
-            json={"table_ids": [sample_tables[0]["id"], sample_tables[1]["id"]]},
-        ).json()
-
-        response = client.patch(
-            f"/merge-groups/{group['id']}",
-            json={"name": "VIP Section", "is_active": False},
-        )
-        assert response.status_code == 200
-        data = response.json()
-        assert data["name"] == "VIP Section"
-        assert data["is_active"] is False
-
-    def test_delete_merge_group(self, client, sample_tables):
-        group = client.post(
-            "/merge-groups",
-            json={"table_ids": [sample_tables[0]["id"], sample_tables[1]["id"]]},
-        ).json()
-
-        response = client.delete(f"/merge-groups/{group['id']}")
-        assert response.status_code == 204
-
-        # Tables should no longer be in a group
-        table = client.get(f"/tables/{sample_tables[0]['id']}").json()
-        assert table["merge_group_id"] is None

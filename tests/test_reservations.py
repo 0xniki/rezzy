@@ -22,7 +22,7 @@ class TestReservations:
                 "party_size": 2,
                 "reservation_date": reservation_date.isoformat(),
                 "reservation_time": "18:00:00",
-                "table_id": full_setup["table"]["id"],
+                "table_ids": [full_setup["table"]["id"]],
             },
         )
         assert response.status_code == 201
@@ -31,6 +31,7 @@ class TestReservations:
         assert data["party_size"] == 2
         assert data["status"] == "confirmed"
         assert data["duration_minutes"] == 90  # Default 1.5 hours
+        assert data["created_by_username"] == "test-admin"
 
     def test_create_reservation_with_phone(self, client, full_setup):
         reservation_date = get_next_weekday(date.today(), 0)
@@ -43,7 +44,7 @@ class TestReservations:
                 "phone_number": "555-1234",
                 "reservation_date": reservation_date.isoformat(),
                 "reservation_time": "19:00:00",
-                "table_id": full_setup["table"]["id"],
+                "table_ids": [full_setup["table"]["id"]],
             },
         )
         assert response.status_code == 201
@@ -59,7 +60,7 @@ class TestReservations:
                 "party_size": 4,  # Requires phone
                 "reservation_date": reservation_date.isoformat(),
                 "reservation_time": "18:00:00",
-                "table_id": full_setup["table"]["id"],
+                "table_ids": [full_setup["table"]["id"]],
             },
         )
         assert response.status_code == 422
@@ -76,7 +77,7 @@ class TestReservations:
                 "notes": "Birthday celebration, please prepare cake",
                 "reservation_date": reservation_date.isoformat(),
                 "reservation_time": "19:00:00",
-                "table_id": full_setup["table"]["id"],
+                "table_ids": [full_setup["table"]["id"]],
             },
         )
         assert response.status_code == 201
@@ -92,7 +93,7 @@ class TestReservations:
                 "party_size": 2,
                 "reservation_date": reservation_date.isoformat(),
                 "reservation_time": "18:00:00",
-                # No table_id or merge_group_id
+                # No table_ids
             },
         )
         assert response.status_code == 422
@@ -108,7 +109,7 @@ class TestReservations:
                 "phone_number": "555-0000",
                 "reservation_date": reservation_date.isoformat(),
                 "reservation_time": "18:00:00",
-                "table_id": full_setup["table"]["id"],
+                "table_ids": [full_setup["table"]["id"]],
             },
         )
         assert response.status_code == 400
@@ -124,7 +125,7 @@ class TestReservations:
                 "party_size": 2,
                 "reservation_date": reservation_date.isoformat(),
                 "reservation_time": "09:00:00",  # Opens at 11:00
-                "table_id": full_setup["table"]["id"],
+                "table_ids": [full_setup["table"]["id"]],
             },
         )
         assert response.status_code == 400
@@ -140,7 +141,7 @@ class TestReservations:
                 "party_size": 2,
                 "reservation_date": reservation_date.isoformat(),
                 "reservation_time": "21:45:00",  # Closes at 22:00, cutoff is 30 min before
-                "table_id": full_setup["table"]["id"],
+                "table_ids": [full_setup["table"]["id"]],
             },
         )
         assert response.status_code == 400
@@ -165,7 +166,7 @@ class TestReservations:
                 "party_size": 2,
                 "reservation_date": reservation_date.isoformat(),
                 "reservation_time": "18:00:00",
-                "table_id": full_setup["table"]["id"],
+                "table_ids": [full_setup["table"]["id"]],
             },
         )
         assert response.status_code == 400
@@ -182,7 +183,7 @@ class TestReservations:
                 "party_size": 2,
                 "reservation_date": reservation_date.isoformat(),
                 "reservation_time": "18:00:00",
-                "table_id": full_setup["table"]["id"],
+                "table_ids": [full_setup["table"]["id"]],
             },
         )
 
@@ -194,7 +195,7 @@ class TestReservations:
                 "party_size": 2,
                 "reservation_date": reservation_date.isoformat(),
                 "reservation_time": "18:30:00",  # Overlaps with first
-                "table_id": full_setup["table"]["id"],
+                "table_ids": [full_setup["table"]["id"]],
             },
         )
         assert response.status_code == 400
@@ -212,7 +213,7 @@ class TestReservations:
                     "party_size": 2,
                     "reservation_date": reservation_date.isoformat(),
                     "reservation_time": time_slot,
-                    "table_id": full_setup["table"]["id"],
+                    "table_ids": [full_setup["table"]["id"]],
                 },
             )
 
@@ -231,7 +232,7 @@ class TestReservations:
                 "party_size": 2,
                 "reservation_date": date1.isoformat(),
                 "reservation_time": "18:00:00",
-                "table_id": full_setup["table"]["id"],
+                "table_ids": [full_setup["table"]["id"]],
             },
         )
         client.post(
@@ -241,7 +242,7 @@ class TestReservations:
                 "party_size": 2,
                 "reservation_date": date2.isoformat(),
                 "reservation_time": "18:00:00",
-                "table_id": full_setup["table"]["id"],
+                "table_ids": [full_setup["table"]["id"]],
             },
         )
 
@@ -261,7 +262,7 @@ class TestReservations:
                 "party_size": 2,
                 "reservation_date": reservation_date.isoformat(),
                 "reservation_time": "18:00:00",
-                "table_id": full_setup["table"]["id"],
+                "table_ids": [full_setup["table"]["id"]],
             },
         ).json()
 
@@ -279,7 +280,7 @@ class TestReservations:
                 "party_size": 2,
                 "reservation_date": reservation_date.isoformat(),
                 "reservation_time": "18:00:00",
-                "table_id": full_setup["table"]["id"],
+                "table_ids": [full_setup["table"]["id"]],
             },
         ).json()
 
@@ -300,7 +301,7 @@ class TestReservations:
                 "party_size": 2,
                 "reservation_date": reservation_date.isoformat(),
                 "reservation_time": "18:00:00",
-                "table_id": full_setup["table"]["id"],
+                "table_ids": [full_setup["table"]["id"]],
             },
         ).json()
 
@@ -321,7 +322,7 @@ class TestReservations:
                 "party_size": 2,
                 "reservation_date": reservation_date.isoformat(),
                 "reservation_time": "18:00:00",
-                "table_id": full_setup["table"]["id"],
+                "table_ids": [full_setup["table"]["id"]],
             },
         ).json()
 
@@ -350,7 +351,7 @@ class TestReservations:
                 "party_size": 2,
                 "reservation_date": reservation_date.isoformat(),
                 "reservation_time": "18:00:00",
-                "table_id": full_setup["table"]["id"],
+                "table_ids": [full_setup["table"]["id"]],
             },
         ).json()
 
@@ -360,6 +361,106 @@ class TestReservations:
         )
         assert response.status_code == 200
         assert response.json()["status"] == "seated"
+
+    def test_update_reservation_table_assignment(self, client, full_setup):
+        reservation_date = get_next_weekday(date.today(), 0)
+        new_table = client.post(
+            "/tables",
+            json={
+                "table_number": "T2",
+                "default_chairs": 4,
+                "max_chairs": 6,
+            },
+        ).json()
+
+        created = client.post(
+            "/reservations",
+            json={
+                "guest_name": "Move Me",
+                "party_size": 2,
+                "reservation_date": reservation_date.isoformat(),
+                "reservation_time": "18:00:00",
+                "table_ids": [full_setup["table"]["id"]],
+            },
+        ).json()
+
+        response = client.patch(
+            f"/reservations/{created['id']}",
+            json={"table_ids": [new_table["id"]]},
+        )
+
+        assert response.status_code == 200
+        assert response.json()["table_ids"] == [new_table["id"]]
+
+    def test_update_reservation_table_assignment_conflict_fails(self, client, full_setup):
+        reservation_date = get_next_weekday(date.today(), 0)
+        other_table = client.post(
+            "/tables",
+            json={
+                "table_number": "T2",
+                "default_chairs": 4,
+                "max_chairs": 6,
+            },
+        ).json()
+
+        created = client.post(
+            "/reservations",
+            json={
+                "guest_name": "Move Me",
+                "party_size": 2,
+                "reservation_date": reservation_date.isoformat(),
+                "reservation_time": "18:00:00",
+                "table_ids": [full_setup["table"]["id"]],
+            },
+        ).json()
+        client.post(
+            "/reservations",
+            json={
+                "guest_name": "Already There",
+                "party_size": 2,
+                "reservation_date": reservation_date.isoformat(),
+                "reservation_time": "18:30:00",
+                "table_ids": [other_table["id"]],
+            },
+        )
+
+        response = client.patch(
+            f"/reservations/{created['id']}",
+            json={"table_ids": [other_table["id"]]},
+        )
+
+        assert response.status_code == 400
+        assert "conflict" in response.json()["detail"].lower()
+
+    def test_update_reservation_duration_revalidates_start_window(self, client, full_setup):
+        reservation_date = get_next_weekday(date.today(), 0)
+
+        created = client.post(
+            "/reservations",
+            json={
+                "guest_name": "Duration Test",
+                "party_size": 2,
+                "reservation_date": reservation_date.isoformat(),
+                "reservation_time": "18:00:00",
+                "table_ids": [full_setup["table"]["id"]],
+            },
+        ).json()
+
+        client.post(
+            "/hours/special",
+            json={
+                "date": reservation_date.isoformat(),
+                "is_closed": True,
+                "reason": "Private event",
+            },
+        )
+
+        response = client.patch(
+            f"/reservations/{created['id']}",
+            json={"duration_minutes": 120},
+        )
+        assert response.status_code == 400
+        assert "closed" in response.json()["detail"].lower()
 
     def test_cancel_reservation(self, client, full_setup):
         reservation_date = get_next_weekday(date.today(), 0)
@@ -371,7 +472,7 @@ class TestReservations:
                 "party_size": 2,
                 "reservation_date": reservation_date.isoformat(),
                 "reservation_time": "18:00:00",
-                "table_id": full_setup["table"]["id"],
+                "table_ids": [full_setup["table"]["id"]],
             },
         ).json()
 
@@ -389,7 +490,7 @@ class TestReservations:
                 "party_size": 2,
                 "reservation_date": reservation_date.isoformat(),
                 "reservation_time": "18:00:00",
-                "table_id": full_setup["table"]["id"],
+                "table_ids": [full_setup["table"]["id"]],
             },
         ).json()
 
@@ -414,7 +515,7 @@ class TestAvailableTables:
         data = response.json()
         assert len(data) == 1
         assert data[0]["type"] == "table"
-        assert data[0]["table_number"] == "T1"
+        assert data[0]["table_numbers"] == ["T1"]
 
     def test_get_available_tables_excludes_booked(self, client, full_setup):
         reservation_date = get_next_weekday(date.today(), 0)
@@ -427,7 +528,7 @@ class TestAvailableTables:
                 "party_size": 2,
                 "reservation_date": reservation_date.isoformat(),
                 "reservation_time": "18:00:00",
-                "table_id": full_setup["table"]["id"],
+                "table_ids": [full_setup["table"]["id"]],
             },
         )
 
@@ -441,6 +542,33 @@ class TestAvailableTables:
         )
         assert response.status_code == 200
         assert len(response.json()) == 0
+
+    def test_get_available_tables_can_exclude_reservation_being_edited(self, client, full_setup):
+        reservation_date = get_next_weekday(date.today(), 0)
+
+        created = client.post(
+            "/reservations",
+            json={
+                "guest_name": "Booked",
+                "party_size": 2,
+                "reservation_date": reservation_date.isoformat(),
+                "reservation_time": "18:00:00",
+                "table_ids": [full_setup["table"]["id"]],
+            },
+        ).json()
+
+        response = client.get(
+            "/reservations/available",
+            params={
+                "reservation_date": reservation_date.isoformat(),
+                "reservation_time": "18:00:00",
+                "party_size": 2,
+                "exclude_reservation_id": created["id"],
+            },
+        )
+
+        assert response.status_code == 200
+        assert response.json()[0]["table_ids"] == [full_setup["table"]["id"]]
 
     def test_get_available_tables_party_size_filter(self, client, full_setup):
         reservation_date = get_next_weekday(date.today(), 0)
@@ -456,107 +584,3 @@ class TestAvailableTables:
         )
         assert response.status_code == 200
         assert len(response.json()) == 0
-
-
-class TestMergeGroupReservations:
-    def test_create_reservation_on_merge_group(self, client, restaurant_config, operating_hours):
-        # Create tables and merge them
-        table1 = client.post(
-            "/tables",
-            json={
-                "table_number": "M1",
-                "x_position": 10.0,
-                "y_position": 10.0,
-                "default_chairs": 4,
-                "max_chairs": 6,
-            },
-        ).json()
-        table2 = client.post(
-            "/tables",
-            json={
-                "table_number": "M2",
-                "x_position": 20.0,
-                "y_position": 10.0,
-                "default_chairs": 4,
-                "max_chairs": 6,
-            },
-        ).json()
-
-        merge_group = client.post(
-            "/merge-groups",
-            json={"name": "Large Section", "table_ids": [table1["id"], table2["id"]]},
-        ).json()
-
-        reservation_date = get_next_weekday(date.today(), 0)
-
-        # Book for party of 6 (needs merged tables)
-        response = client.post(
-            "/reservations",
-            json={
-                "guest_name": "Large Party",
-                "party_size": 6,
-                "phone_number": "555-LARGE",
-                "reservation_date": reservation_date.isoformat(),
-                "reservation_time": "18:00:00",
-                "merge_group_id": merge_group["id"],
-            },
-        )
-        assert response.status_code == 201
-        assert response.json()["merge_group_id"] == merge_group["id"]
-
-    def test_merge_group_blocks_individual_tables(self, client, restaurant_config, operating_hours):
-        # Create and merge tables
-        table1 = client.post(
-            "/tables",
-            json={
-                "table_number": "B1",
-                "x_position": 10.0,
-                "y_position": 10.0,
-                "default_chairs": 4,
-                "max_chairs": 6,
-            },
-        ).json()
-        table2 = client.post(
-            "/tables",
-            json={
-                "table_number": "B2",
-                "x_position": 20.0,
-                "y_position": 10.0,
-                "default_chairs": 4,
-                "max_chairs": 6,
-            },
-        ).json()
-
-        merge_group = client.post(
-            "/merge-groups",
-            json={"table_ids": [table1["id"], table2["id"]]},
-        ).json()
-
-        reservation_date = get_next_weekday(date.today(), 0)
-
-        # Book the merge group
-        client.post(
-            "/reservations",
-            json={
-                "guest_name": "Group Booking",
-                "party_size": 6,
-                "phone_number": "555-0000",
-                "reservation_date": reservation_date.isoformat(),
-                "reservation_time": "18:00:00",
-                "merge_group_id": merge_group["id"],
-            },
-        )
-
-        # Try to book individual table in the group - should fail
-        response = client.post(
-            "/reservations",
-            json={
-                "guest_name": "Individual Booking",
-                "party_size": 2,
-                "reservation_date": reservation_date.isoformat(),
-                "reservation_time": "18:30:00",
-                "table_id": table1["id"],
-            },
-        )
-        assert response.status_code == 400
-        assert "conflict" in response.json()["detail"].lower()

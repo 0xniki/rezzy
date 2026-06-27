@@ -1,11 +1,13 @@
 import pytest
-from datetime import date, time
+from datetime import date, time, datetime, timezone
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from fastapi.testclient import TestClient
 
 from rezzy.core.database import Base, get_db
+from rezzy.core.security import get_current_user, hash_password
 from rezzy.main import app
+from rezzy.models.user import User
 
 
 # Use SQLite for testing
@@ -31,13 +33,28 @@ def db():
 @pytest.fixture(scope="function")
 def client(db):
     """Create a test client with database dependency override."""
+    test_admin = User(
+        username="test-admin",
+        hashed_password=hash_password("password123"),
+        role="admin",
+        is_active=True,
+        approved_at=datetime.now(timezone.utc),
+    )
+    db.add(test_admin)
+    db.commit()
+    db.refresh(test_admin)
+
     def override_get_db():
         try:
             yield db
         finally:
             pass
 
+    def override_get_current_user():
+        return test_admin
+
     app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[get_current_user] = override_get_current_user
     with TestClient(app) as c:
         yield c
     app.dependency_overrides.clear()
@@ -82,7 +99,6 @@ def sample_tables(client, restaurant_config):
                 "y_position": 20.0,
                 "default_chairs": 4,
                 "max_chairs": 6,
-                "is_mergeable": True,
             },
         )
         tables.append(response.json())

@@ -24,7 +24,6 @@ const defaultTable = (): TableDraft => ({
   table_number: '',
   default_chairs: 4,
   max_chairs: 6,
-  current_chairs: 4,
   x_position: 0,
   y_position: 0,
 });
@@ -49,7 +48,6 @@ export default function SetupTables({ onNext, onBack }: Props) {
           table_number: t.table_number,
           default_chairs: t.default_chairs,
           max_chairs: t.max_chairs,
-          current_chairs: t.current_chairs ?? t.default_chairs,
           x_position: t.x_position,
           y_position: t.y_position,
         });

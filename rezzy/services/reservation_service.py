@@ -5,6 +5,7 @@ from fastapi import HTTPException, status
 from itertools import combinations
 
 from rezzy.models import Reservation, Table
+from rezzy.models.user import User
 from rezzy.schemas import ReservationCreate, ReservationUpdate
 from rezzy.services.hours_service import HoursValidationService
 from rezzy.services.restaurant_service import TableService
@@ -95,7 +96,11 @@ class ReservationService:
         return True, None
 
     @staticmethod
-    def create_reservation(db: Session, reservation: ReservationCreate) -> Reservation:
+    def create_reservation(
+        db: Session,
+        reservation: ReservationCreate,
+        created_by: User,
+    ) -> Reservation:
         # Validate operating hours
         is_valid, error = HoursValidationService.is_time_within_hours(
             db, reservation.reservation_date, reservation.reservation_time,
@@ -140,6 +145,7 @@ class ReservationService:
             reservation_date=reservation.reservation_date,
             reservation_time=reservation.reservation_time,
             duration_minutes=reservation.duration_minutes,
+            created_by_user_id=created_by.id,
         )
         db_reservation.tables = tables
         db.add(db_reservation)
@@ -182,8 +188,12 @@ class ReservationService:
         else:
             tables = db_reservation.tables
 
-        # Validate hours if time changed
-        if "reservation_date" in update_data or "reservation_time" in update_data:
+        # Validate the reservation start window if date, time, or duration changed.
+        if (
+            "reservation_date" in update_data
+            or "reservation_time" in update_data
+            or "duration_minutes" in update_data
+        ):
             is_valid, error = HoursValidationService.is_time_within_hours(
                 db, new_date, new_time, new_duration
             )
@@ -240,6 +250,7 @@ class ReservationService:
         reservation_time: time,
         party_size: int,
         duration_minutes: int = 90,
+        exclude_reservation_id: int | None = None,
     ) -> list[dict]:
         """
         Find available tables for the given slot and party size.
@@ -258,7 +269,12 @@ class ReservationService:
         free_tables = []
         for table in all_tables:
             conflicts = ReservationService._overlapping_reservations(
-                db, [table.id], reservation_date, reservation_time, duration_minutes
+                db,
+                [table.id],
+                reservation_date,
+                reservation_time,
+                duration_minutes,
+                exclude_reservation_id,
             )
             if not conflicts:
                 free_tables.append(table)

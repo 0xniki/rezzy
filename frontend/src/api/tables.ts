@@ -9,6 +9,6 @@ export const tablesApi = {
   update: (id: number, data: TableUpdate) =>
     client.patch<Table>(`/tables/${id}`, data).then((r) => r.data),
   delete: (id: number) => client.delete(`/tables/${id}`).then((r) => r.data),
-  rearrangeChairs: (adjustments: { table_id: number; chair_delta: number }[]) =>
-    client.post('/tables/rearrange-chairs', { table_adjustments: adjustments }).then((r) => r.data),
+  rearrangeChairs: (adjustments: { table_id: number; new_chair_count: number }[]) =>
+    client.post<Table[]>('/tables/rearrange-chairs', adjustments).then((r) => r.data),
 };

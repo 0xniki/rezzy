@@ -3,6 +3,8 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from rezzy.core.database import get_db
+from rezzy.core.security import get_current_user
+from rezzy.models.user import User
 from rezzy.schemas import (
     ReservationCreate,
     ReservationUpdate,
@@ -33,11 +35,17 @@ def get_available_tables(
     reservation_time: time,
     party_size: int,
     duration_minutes: int = Query(90, gt=0),
+    exclude_reservation_id: int | None = Query(None),
     db: Session = Depends(get_db),
 ):
     """Find available tables for a given time slot and party size"""
     return ReservationService.get_available_tables(
-        db, reservation_date, reservation_time, party_size, duration_minutes
+        db,
+        reservation_date,
+        reservation_time,
+        party_size,
+        duration_minutes,
+        exclude_reservation_id,
     )
 
 
@@ -48,7 +56,11 @@ def get_reservation(reservation_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("", response_model=ReservationResponse, status_code=201)
-def create_reservation(reservation: ReservationCreate, db: Session = Depends(get_db)):
+def create_reservation(
+    reservation: ReservationCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     """
     Create a new reservation.
 
@@ -58,7 +70,7 @@ def create_reservation(reservation: ReservationCreate, db: Session = Depends(get
     - Phone number required for party size of 4+
     - Table must be assigned and have sufficient capacity
     """
-    return ReservationService.create_reservation(db, reservation)
+    return ReservationService.create_reservation(db, reservation, current_user)
 
 
 @router.patch("/{reservation_id}", response_model=ReservationResponse)

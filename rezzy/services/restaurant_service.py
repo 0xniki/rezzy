@@ -86,16 +86,28 @@ class TableService:
         db_table = TableService.get_table(db, table_id)
         update_data = table.model_dump(exclude_unset=True)
 
+        new_number = update_data.get("table_number")
+        if new_number is not None and new_number != db_table.table_number:
+            existing = (
+                db.query(Table)
+                .filter(Table.table_number == new_number, Table.id != table_id)
+                .first()
+            )
+            if existing:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Table with number '{new_number}' already exists",
+                )
+
         new_default = update_data.get("default_chairs", db_table.default_chairs)
         new_max = update_data.get("max_chairs", db_table.max_chairs)
-        new_current = update_data.get("current_chairs", db_table.current_chairs)
 
         if new_max < new_default:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="max_chairs cannot be less than default_chairs",
             )
-        if new_current > new_max:
+        if db_table.current_chairs > new_max:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="current_chairs cannot exceed max_chairs",

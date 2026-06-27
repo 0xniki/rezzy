@@ -2,36 +2,43 @@
 CLI utilities for Rezzy administration.
 
 Usage:
-    uv run python -m rezzy.cli create-user <username> <password>
+    uv run python -m rezzy.cli create-admin <username> <password>
 """
 import sys
+from datetime import datetime, timezone
 from rezzy.core.database import SessionLocal
 from rezzy.core.security import hash_password
 from rezzy.models.user import User
 
 
-def create_user(username: str, password: str) -> None:
+def create_admin(username: str, password: str) -> None:
     db = SessionLocal()
     try:
         existing = db.query(User).filter(User.username == username).first()
         if existing:
             print(f"Error: user '{username}' already exists.")
             sys.exit(1)
-        user = User(username=username, hashed_password=hash_password(password))
+        user = User(
+            username=username,
+            hashed_password=hash_password(password),
+            role="admin",
+            is_active=True,
+            approved_at=datetime.now(timezone.utc),
+        )
         db.add(user)
         db.commit()
-        print(f"User '{username}' created successfully.")
+        print(f"Admin '{username}' created successfully.")
     finally:
         db.close()
 
 
 def main():
     args = sys.argv[1:]
-    if len(args) == 3 and args[0] == "create-user":
+    if len(args) == 3 and args[0] == "create-admin":
         _, username, password = args
-        create_user(username, password)
+        create_admin(username, password)
     else:
-        print("Usage: python -m rezzy.cli create-user <username> <password>")
+        print("Usage: python -m rezzy.cli create-admin <username> <password>")
         sys.exit(1)
 
 

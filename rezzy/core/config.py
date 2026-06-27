@@ -4,6 +4,7 @@ from functools import lru_cache
 
 class Settings(BaseSettings):
     database_url: str = "postgresql://localhost:5432/rezzy"
+    secret_key: str = "rezzy-secret-change-in-production"
 
     # Reservation settings
     reservation_cutoff_minutes: int = 30  # Can't book within 30 min of closing

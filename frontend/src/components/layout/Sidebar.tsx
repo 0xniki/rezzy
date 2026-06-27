@@ -7,9 +7,10 @@ import {
   Utensils,
   CalendarClock,
   LogOut,
+  ShieldCheck,
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
-import { useAuth } from '../../context/AuthContext';
+import { useAuth } from '../../context/useAuth';
 
 const nav = [
   { to: '/reservations', label: 'Reservations', icon: CalendarDays },
@@ -19,8 +20,12 @@ const nav = [
   { to: '/settings', label: 'Settings', icon: Settings },
 ];
 
+const adminNav = [
+  { to: '/admin/users', label: 'User Approval', icon: ShieldCheck },
+];
+
 export default function Sidebar() {
-  const { username, logout } = useAuth();
+  const { username, role, logout } = useAuth();
   const navigate = useNavigate();
 
   const handleLogout = () => {
@@ -54,6 +59,27 @@ export default function Sidebar() {
             {label}
           </NavLink>
         ))}
+        {role === 'admin' && (
+          <div className="pt-3 mt-3 border-t border-gray-100 flex flex-col gap-1">
+            {adminNav.map(({ to, label, icon: Icon }) => (
+              <NavLink
+                key={to}
+                to={to}
+                className={({ isActive }) =>
+                  cn(
+                    'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
+                    isActive
+                      ? 'bg-blue-50 text-blue-700'
+                      : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                  )
+                }
+              >
+                <Icon size={18} />
+                {label}
+              </NavLink>
+            ))}
+          </div>
+        )}
       </nav>
       {/* Footer: username + logout */}
       <div className="px-3 py-4 border-t border-gray-100">

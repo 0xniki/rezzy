@@ -1,4 +1,6 @@
 from rezzy.schemas.restaurant import (
+    UserCreate,
+    UserResponse,
     RestaurantConfigCreate,
     RestaurantConfigUpdate,
     RestaurantConfigResponse,
@@ -18,6 +20,8 @@ from rezzy.schemas.restaurant import (
 )
 
 __all__ = [
+    "UserCreate",
+    "UserResponse",
     "RestaurantConfigCreate",
     "RestaurantConfigUpdate",
     "RestaurantConfigResponse",

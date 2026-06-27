@@ -8,13 +8,14 @@ import Modal from '../components/ui/Modal';
 import Input from '../components/ui/Input';
 import Alert from '../components/ui/Alert';
 import Toggle from '../components/ui/Toggle';
-import { Plus, Trash2, Edit2 } from 'lucide-react';
+import { Armchair, Plus, Trash2, Edit2 } from 'lucide-react';
 import type { Table, TableCreate, TableUpdate } from '../types';
 
 export default function TablesPage() {
   const qc = useQueryClient();
   const [showCreate, setShowCreate] = useState(false);
   const [editTable, setEditTable] = useState<Table | null>(null);
+  const [adjustTable, setAdjustTable] = useState<Table | null>(null);
 
   const { data: tables = [], isLoading } = useQuery({
     queryKey: ['tables'],
@@ -54,6 +55,9 @@ export default function TablesPage() {
                   {!table.is_active && <Badge color="gray">Inactive</Badge>}
                 </div>
                 <div className="flex gap-1">
+                  <Button variant="ghost" size="sm" onClick={() => setAdjustTable(table)}>
+                    <Armchair size={14} />
+                  </Button>
                   <Button variant="ghost" size="sm" onClick={() => setEditTable(table)}>
                     <Edit2 size={14} />
                   </Button>
@@ -95,6 +99,9 @@ export default function TablesPage() {
       {editTable && (
         <EditTableModal table={editTable} onClose={() => setEditTable(null)} />
       )}
+      {adjustTable && (
+        <AdjustChairsModal table={adjustTable} onClose={() => setAdjustTable(null)} />
+      )}
     </div>
   );
 }
@@ -107,7 +114,6 @@ function CreateTableModal({ open, onClose }: { open: boolean; onClose: () => voi
     table_number: '',
     default_chairs: 4,
     max_chairs: 6,
-    current_chairs: 4,
     x_position: 0,
     y_position: 0,
   });
@@ -141,7 +147,7 @@ function CreateTableModal({ open, onClose }: { open: boolean; onClose: () => voi
           onChange={(e) => set({ table_number: e.target.value })}
           required
         />
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-2 gap-3">
           <Input
             label="Default Chairs"
             type="number"
@@ -155,13 +161,6 @@ function CreateTableModal({ open, onClose }: { open: boolean; onClose: () => voi
             min="1"
             value={form.max_chairs}
             onChange={(e) => set({ max_chairs: parseInt(e.target.value) || 1 })}
-          />
-          <Input
-            label="Current Chairs"
-            type="number"
-            min="1"
-            value={form.current_chairs ?? form.default_chairs}
-            onChange={(e) => set({ current_chairs: parseInt(e.target.value) || 1 })}
           />
         </div>
         <div className="flex justify-end gap-3 pt-2">
@@ -181,7 +180,6 @@ function EditTableModal({ table, onClose }: { table: Table; onClose: () => void 
     table_number: table.table_number,
     default_chairs: table.default_chairs,
     max_chairs: table.max_chairs,
-    current_chairs: table.current_chairs,
     is_active: table.is_active,
   });
   const [error, setError] = useState('');
@@ -212,7 +210,7 @@ function EditTableModal({ table, onClose }: { table: Table; onClose: () => void 
           value={form.table_number ?? ''}
           onChange={(e) => set({ table_number: e.target.value })}
         />
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-2 gap-3">
           <Input
             label="Default Chairs"
             type="number"
@@ -227,13 +225,6 @@ function EditTableModal({ table, onClose }: { table: Table; onClose: () => void 
             value={form.max_chairs}
             onChange={(e) => set({ max_chairs: parseInt(e.target.value) || 1 })}
           />
-          <Input
-            label="Current Chairs"
-            type="number"
-            min="1"
-            value={form.current_chairs}
-            onChange={(e) => set({ current_chairs: parseInt(e.target.value) || 1 })}
-          />
         </div>
         <Toggle
           checked={form.is_active ?? true}
@@ -243,6 +234,57 @@ function EditTableModal({ table, onClose }: { table: Table; onClose: () => void 
         <div className="flex justify-end gap-3 pt-2">
           <Button variant="outline" type="button" onClick={onClose}>Cancel</Button>
           <Button type="submit" loading={mutation.isPending}>Save Changes</Button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+// ─── Adjust Chairs Modal ─────────────────────────────────────────────────────
+
+function AdjustChairsModal({ table, onClose }: { table: Table; onClose: () => void }) {
+  const qc = useQueryClient();
+  const [newChairCount, setNewChairCount] = useState(table.current_chairs);
+  const [error, setError] = useState('');
+
+  const mutation = useMutation({
+    mutationFn: () =>
+      tablesApi.rearrangeChairs([
+        { table_id: table.id, new_chair_count: newChairCount },
+      ]),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['tables'] });
+      qc.invalidateQueries({ queryKey: ['config'] });
+      onClose();
+    },
+    onError: (e: Error) => setError(e.message),
+  });
+
+  return (
+    <Modal open onClose={onClose} title={`Adjust Chairs ${table.table_number}`}>
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          setError('');
+          mutation.mutate();
+        }}
+        className="flex flex-col gap-4"
+      >
+        {error && <Alert variant="error">{error}</Alert>}
+        <Input
+          label="Current Chairs"
+          type="number"
+          min="0"
+          max={table.max_chairs}
+          value={newChairCount}
+          onChange={(e) => setNewChairCount(parseInt(e.target.value) || 0)}
+        />
+        <div className="text-sm text-gray-500">
+          Default {table.default_chairs}, max {table.max_chairs}
+        </div>
+        <div className="flex justify-end gap-3 pt-2">
+          <Button variant="outline" type="button" onClick={onClose}>Cancel</Button>
+          <Button type="submit" loading={mutation.isPending}>Save Chairs</Button>
         </div>
       </form>
     </Modal>
