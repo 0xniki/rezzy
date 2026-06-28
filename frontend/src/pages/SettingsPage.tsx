@@ -42,7 +42,7 @@ function SettingsForm({ config }: { config?: RestaurantConfig }) {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
+      <div className="mb-5 flex flex-col gap-3 sm:mb-6 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Settings</h1>
           <p className="text-gray-500 text-sm mt-0.5">Manage restaurant configuration</p>
@@ -85,8 +85,8 @@ function SettingsForm({ config }: { config?: RestaurantConfig }) {
               }
               hint="Unassigned chairs that can be moved to any table"
             />
-            <div className="flex justify-end pt-2">
-              <Button type="submit" loading={mutation.isPending}>
+            <div className="flex pt-2 sm:justify-end">
+              <Button type="submit" loading={mutation.isPending} className="w-full sm:w-auto">
                 <Save size={16} />
                 Save Settings
               </Button>

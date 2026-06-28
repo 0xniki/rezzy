@@ -73,7 +73,7 @@ function SetupRestaurantInfoForm({
 
   return (
     <form onSubmit={handleSubmit}>
-      <div className="px-8 py-6 border-b border-gray-100 flex items-center gap-3">
+      <div className="flex items-center gap-3 border-b border-gray-100 px-4 py-5 sm:px-8 sm:py-6">
         <div className="bg-blue-100 text-blue-600 rounded-xl p-2.5">
           <Store size={22} />
         </div>
@@ -83,7 +83,7 @@ function SetupRestaurantInfoForm({
         </div>
       </div>
 
-      <div className="px-8 py-6 flex flex-col gap-5">
+      <div className="flex flex-col gap-5 px-4 py-5 sm:px-8 sm:py-6">
         {error && <Alert variant="error">{error}</Alert>}
 
         <Input
@@ -105,8 +105,8 @@ function SetupRestaurantInfoForm({
         />
       </div>
 
-      <div className="px-8 py-4 bg-gray-50 border-t border-gray-100 flex justify-end">
-        <Button type="submit" loading={isPending} size="lg">
+      <div className="flex border-t border-gray-100 bg-gray-50 px-4 py-4 sm:justify-end sm:px-8">
+        <Button type="submit" loading={isPending} size="lg" className="w-full sm:w-auto">
           Continue
           <ChevronRight size={18} />
         </Button>

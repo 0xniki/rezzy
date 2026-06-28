@@ -5,3 +5,20 @@
     @apply bg-gray-50 text-gray-900 antialiased;
   }
 }
+
+@layer utilities {
+  @keyframes rezzy-fade-slide {
+    from {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .animate-rezzy-fade-slide {
+    animation: rezzy-fade-slide 180ms ease-out;
+  }
+}

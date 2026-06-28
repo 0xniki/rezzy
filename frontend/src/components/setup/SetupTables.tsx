@@ -95,7 +95,7 @@ export default function SetupTables({ onNext, onBack }: Props) {
 
   return (
     <form onSubmit={handleSubmit}>
-      <div className="px-8 py-6 border-b border-gray-100 flex items-center gap-3">
+      <div className="flex items-center gap-3 border-b border-gray-100 px-4 py-5 sm:px-8 sm:py-6">
         <div className="bg-green-100 text-green-600 rounded-xl p-2.5">
           <LayoutGrid size={22} />
         </div>
@@ -105,12 +105,12 @@ export default function SetupTables({ onNext, onBack }: Props) {
         </div>
       </div>
 
-      <div className="px-8 py-6 flex flex-col gap-4 max-h-[50vh] overflow-y-auto">
+      <div className="flex max-h-[55vh] flex-col gap-4 overflow-y-auto px-4 py-5 sm:max-h-[50vh] sm:px-8 sm:py-6">
         {error && <Alert variant="error">{error}</Alert>}
 
         {tables.map((t) => (
           <div key={t.key} className="border border-gray-200 rounded-xl p-4 bg-gray-50">
-            <div className="flex items-start justify-between mb-3">
+            <div className="mb-3 flex items-start justify-between">
               <span className="text-sm font-semibold text-gray-700">Table</span>
               <button
                 type="button"
@@ -120,7 +120,7 @@ export default function SetupTables({ onNext, onBack }: Props) {
                 <Trash2 size={15} />
               </button>
             </div>
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
               <Input
                 label="Table #"
                 placeholder="e.g. T1, A2"
@@ -155,12 +155,12 @@ export default function SetupTables({ onNext, onBack }: Props) {
         </Button>
       </div>
 
-      <div className="px-8 py-4 bg-gray-50 border-t border-gray-100 flex justify-between">
-        <Button type="button" variant="ghost" onClick={onBack}>
+      <div className="flex flex-col-reverse gap-3 border-t border-gray-100 bg-gray-50 px-4 py-4 sm:flex-row sm:justify-between sm:px-8">
+        <Button type="button" variant="ghost" onClick={onBack} className="w-full sm:w-auto">
           <ChevronLeft size={18} />
           Back
         </Button>
-        <Button type="submit" loading={mutation.isPending} size="lg">
+        <Button type="submit" loading={mutation.isPending} size="lg" className="w-full sm:w-auto">
           <CheckCircle size={18} />
           Finish Setup
         </Button>

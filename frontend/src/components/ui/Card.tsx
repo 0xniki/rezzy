@@ -18,7 +18,7 @@ export function Card({ children, className, ...props }: CardProps) {
 
 export function CardHeader({ children, className, ...props }: CardProps) {
   return (
-    <div {...props} className={cn('px-6 py-4 border-b border-gray-100', className)}>
+    <div {...props} className={cn('border-b border-gray-100 px-4 py-4 sm:px-6', className)}>
       {children}
     </div>
   );
@@ -26,7 +26,7 @@ export function CardHeader({ children, className, ...props }: CardProps) {
 
 export function CardBody({ children, className, ...props }: CardProps) {
   return (
-    <div {...props} className={cn('px-6 py-5', className)}>
+    <div {...props} className={cn('px-4 py-4 sm:px-6 sm:py-5', className)}>
       {children}
     </div>
   );

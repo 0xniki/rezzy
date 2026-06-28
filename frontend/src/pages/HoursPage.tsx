@@ -79,7 +79,7 @@ export default function HoursPage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
+      <div className="mb-5 flex flex-col gap-3 sm:mb-6 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Operating Hours</h1>
           <p className="text-gray-500 text-sm mt-0.5">Set your regular weekly schedule</p>
@@ -89,6 +89,7 @@ export default function HoursPage() {
             onClick={() => saveMutation.mutate()}
             loading={saveMutation.isPending}
             disabled={!hasEdits}
+            className="w-full sm:w-auto"
           >
             <Save size={16} />
             Save Changes
@@ -113,9 +114,9 @@ export default function HoursPage() {
             return (
               <div
                 key={i}
-                className="flex items-center gap-6 px-6 py-4 border-b border-gray-100 last:border-0"
+                className="flex flex-col gap-3 border-b border-gray-100 px-4 py-4 last:border-0 sm:flex-row sm:items-center sm:gap-6 sm:px-6"
               >
-                <div className="w-28 flex items-center gap-2">
+                <div className="flex w-full items-center gap-2 sm:w-28">
                   <span className="font-medium text-gray-800">{day}</span>
                   {isEdited && (
                     <span className="text-[10px] bg-yellow-100 text-yellow-700 px-1.5 py-0.5 rounded-full font-medium">
@@ -129,13 +130,13 @@ export default function HoursPage() {
                   onChange={(open) => updateDay(i, { is_closed: !open })}
                 />
                 {!d.is_closed ? (
-                  <div className="flex items-center gap-3">
+                  <div className="flex w-full flex-wrap items-center gap-3 sm:w-auto">
                     <input
                       type="time"
                       value={d.open_time}
                       disabled={!isAdmin}
                       onChange={(e) => updateDay(i, { open_time: e.target.value })}
-                      className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                      className="min-h-10 rounded-lg border border-gray-300 px-3 py-1.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                     />
                     <span className="text-gray-400 text-sm">—</span>
                     <input
@@ -143,7 +144,7 @@ export default function HoursPage() {
                       value={d.close_time}
                       disabled={!isAdmin}
                       onChange={(e) => updateDay(i, { close_time: e.target.value })}
-                      className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                      className="min-h-10 rounded-lg border border-gray-300 px-3 py-1.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                     />
                     <span className="text-sm text-gray-500">
                       ({formatTime(d.open_time)} – {formatTime(d.close_time)})

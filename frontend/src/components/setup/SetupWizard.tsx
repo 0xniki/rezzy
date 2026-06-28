@@ -37,25 +37,25 @@ export default function SetupWizard({ onComplete }: SetupWizardProps) {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
+    <div className="flex min-h-dvh items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100 p-3 sm:p-4">
       <div className="w-full max-w-2xl">
         {/* Header */}
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-14 h-14 bg-blue-600 text-white rounded-2xl mb-4">
+        <div className="mb-5 text-center sm:mb-8">
+          <div className="mb-3 inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-600 text-white sm:mb-4 sm:h-14 sm:w-14">
             <Utensils size={28} />
           </div>
-          <h1 className="text-3xl font-bold text-gray-900">Welcome to Rezzy</h1>
+          <h1 className="text-2xl font-bold text-gray-900 sm:text-3xl">Welcome to Rezzy</h1>
           <p className="text-gray-500 mt-1">Let's set up your restaurant in a few quick steps</p>
         </div>
 
         {/* Steps */}
-        <div className="flex items-center justify-center mb-8 gap-0">
+        <div className="mb-5 flex items-center justify-start gap-0 overflow-x-auto pb-1 sm:mb-8 sm:justify-center">
           {STEPS.map((s, i) => (
             <div key={s.id} className="flex items-center">
               <button
                 onClick={() => completedSteps.has(s.id) && setStep(s.id)}
                 className={cn(
-                  'flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium transition-all',
+                  'flex whitespace-nowrap items-center gap-2 rounded-full px-3 py-1.5 text-sm font-medium transition-all',
                   step === s.id && 'bg-blue-600 text-white shadow-md',
                   step !== s.id && completedSteps.has(s.id) && 'text-blue-600 cursor-pointer hover:bg-blue-50',
                   step !== s.id && !completedSteps.has(s.id) && 'text-gray-400 cursor-default'
@@ -78,7 +78,7 @@ export default function SetupWizard({ onComplete }: SetupWizardProps) {
               {i < STEPS.length - 1 && (
                 <div
                   className={cn(
-                    'w-8 h-0.5 mx-1',
+                    'mx-1 h-0.5 w-5 sm:w-8',
                     completedSteps.has(s.id) ? 'bg-blue-400' : 'bg-gray-200'
                   )}
                 />
@@ -88,7 +88,7 @@ export default function SetupWizard({ onComplete }: SetupWizardProps) {
         </div>
 
         {/* Step Content */}
-        <div className="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden">
+        <div className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-lg">
           {step === 1 && <SetupRestaurantInfo onNext={() => completeStep(1)} />}
           {step === 2 && <SetupHours onNext={() => completeStep(2)} onBack={() => setStep(1)} />}
           {step === 3 && <SetupTables onNext={() => completeStep(3)} onBack={() => setStep(2)} />}

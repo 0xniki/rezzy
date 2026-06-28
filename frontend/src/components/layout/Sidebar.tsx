@@ -9,6 +9,7 @@ import {
   LogOut,
   ShieldCheck,
 } from 'lucide-react';
+import type { ComponentType } from 'react';
 import { cn } from '../../lib/utils';
 import { useAuth } from '../../context/useAuth';
 
@@ -24,78 +25,85 @@ const adminNav = [
   { to: '/admin/users', label: 'User Approval', icon: ShieldCheck },
 ];
 
-export default function Sidebar() {
+type NavItem = {
+  to: string;
+  label: string;
+  icon: ComponentType<{ size?: number; className?: string }>;
+};
+
+function NavItems({ items, onNavigate }: { items: NavItem[]; onNavigate?: () => void }) {
+  return (
+    <>
+      {items.map(({ to, label, icon: Icon }) => (
+        <NavLink
+          key={to}
+          to={to}
+          onClick={onNavigate}
+          className={({ isActive }) =>
+            cn(
+              'flex min-h-11 items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors',
+              isActive
+                ? 'bg-blue-50 text-blue-700'
+                : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+            )
+          }
+        >
+          <Icon size={18} className="shrink-0" />
+          <span className="truncate">{label}</span>
+        </NavLink>
+      ))}
+    </>
+  );
+}
+
+export function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   const { username, role, logout } = useAuth();
   const navigate = useNavigate();
 
   const handleLogout = () => {
     logout();
+    onNavigate?.();
     navigate('/login', { replace: true });
   };
 
   return (
-    <aside className="w-60 bg-white border-r border-gray-200 flex flex-col shrink-0">
-      <div className="px-6 py-5 border-b border-gray-100 flex items-center gap-2.5">
-        <div className="bg-blue-600 text-white rounded-lg p-1.5">
+    <>
+      <div className="flex items-center gap-2.5 border-b border-gray-100 px-6 py-5">
+        <div className="rounded-lg bg-blue-600 p-1.5 text-white">
           <Utensils size={18} />
         </div>
-        <span className="font-bold text-gray-900 text-lg">Rezzy</span>
+        <span className="text-lg font-bold text-gray-900">Rezzy</span>
       </div>
-      <nav className="flex-1 py-4 px-3 flex flex-col gap-1">
-        {nav.map(({ to, label, icon: Icon }) => (
-          <NavLink
-            key={to}
-            to={to}
-            className={({ isActive }) =>
-              cn(
-                'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
-                isActive
-                  ? 'bg-blue-50 text-blue-700'
-                  : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
-              )
-            }
-          >
-            <Icon size={18} />
-            {label}
-          </NavLink>
-        ))}
+      <nav className="flex flex-1 flex-col gap-1 px-3 py-4">
+        <NavItems items={nav} onNavigate={onNavigate} />
         {role === 'admin' && (
-          <div className="pt-3 mt-3 border-t border-gray-100 flex flex-col gap-1">
-            {adminNav.map(({ to, label, icon: Icon }) => (
-              <NavLink
-                key={to}
-                to={to}
-                className={({ isActive }) =>
-                  cn(
-                    'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
-                    isActive
-                      ? 'bg-blue-50 text-blue-700'
-                      : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
-                  )
-                }
-              >
-                <Icon size={18} />
-                {label}
-              </NavLink>
-            ))}
+          <div className="mt-3 flex flex-col gap-1 border-t border-gray-100 pt-3">
+            <NavItems items={adminNav} onNavigate={onNavigate} />
           </div>
         )}
       </nav>
-      {/* Footer: username + logout */}
-      <div className="px-3 py-4 border-t border-gray-100">
+      <div className="border-t border-gray-100 px-3 py-4">
         <div className="flex items-center gap-2 px-3 py-2">
-          <div className="flex-1 min-w-0">
-            <p className="text-xs font-medium text-gray-700 truncate">{username}</p>
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-xs font-medium text-gray-700">{username}</p>
           </div>
           <button
             onClick={handleLogout}
             title="Sign out"
-            className="text-gray-400 hover:text-red-500 transition-colors p-1 rounded"
+            className="rounded p-2 text-gray-400 transition-colors hover:text-red-500"
           >
             <LogOut size={16} />
           </button>
         </div>
       </div>
+    </>
+  );
+}
+
+export default function Sidebar() {
+  return (
+    <aside className="hidden w-60 shrink-0 flex-col border-r border-gray-200 bg-white md:flex">
+      <SidebarContent />
     </aside>
   );
 }

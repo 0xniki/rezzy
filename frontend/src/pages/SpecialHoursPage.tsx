@@ -1,17 +1,70 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { specialHoursApi } from '../api/hours';
+import { reservationsApi } from '../api/reservations';
 import { Card, CardBody } from '../components/ui/Card';
 import Button from '../components/ui/Button';
 import Badge from '../components/ui/Badge';
 import Modal from '../components/ui/Modal';
 import Input from '../components/ui/Input';
+import Select from '../components/ui/Select';
 import Alert from '../components/ui/Alert';
 import Toggle from '../components/ui/Toggle';
 import { Plus, Trash2, CalendarClock } from 'lucide-react';
 import { formatDate, formatTime, todayString } from '../lib/utils';
-import type { SpecialHoursCreate } from '../types';
+import type { Reservation, SpecialHoursCreate } from '../types';
 import { useAuth } from '../context/useAuth';
+
+function timeToMinutes(time: string): number {
+  const [hours, minutes] = time.slice(0, 5).split(':').map(Number);
+  return hours * 60 + minutes;
+}
+
+function minutesToTime(minutes: number): string {
+  const normalized = ((minutes % 1440) + 1440) % 1440;
+  const hours = Math.floor(normalized / 60);
+  const mins = normalized % 60;
+  return `${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}`;
+}
+
+function halfHourTimeOptions(): { value: string; label: string }[] {
+  const options: { value: string; label: string }[] = [];
+  for (let minutes = 0; minutes < 24 * 60; minutes += 30) {
+    const time = minutesToTime(minutes);
+    options.push({ value: time, label: formatTime(time) });
+  }
+  return options;
+}
+
+const SPECIAL_HOUR_TIME_OPTIONS = halfHourTimeOptions();
+
+function reservationTimeRange(reservation: Reservation): string {
+  const startMinutes = timeToMinutes(reservation.reservation_time);
+  return `${formatTime(reservation.reservation_time)}-${formatTime(
+    minutesToTime(startMinutes + reservation.duration_minutes)
+  )}`;
+}
+
+function impactedReservations(
+  form: SpecialHoursCreate,
+  reservations: Reservation[]
+): Reservation[] {
+  const activeReservations = reservations.filter((r) =>
+    r.status === 'confirmed' || r.status === 'seated'
+  );
+
+  if (form.is_closed) return activeReservations;
+  if (!form.open_time || !form.close_time) return [];
+
+  const openMinutes = timeToMinutes(form.open_time);
+  const closeMinutes = timeToMinutes(form.close_time);
+
+  return activeReservations.filter((reservation) => {
+    const startMinutes = timeToMinutes(reservation.reservation_time);
+    const endMinutes = startMinutes + reservation.duration_minutes;
+    return startMinutes < openMinutes || endMinutes > closeMinutes;
+  });
+}
 
 export default function SpecialHoursPage() {
   const qc = useQueryClient();
@@ -38,7 +91,7 @@ export default function SpecialHoursPage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
+      <div className="mb-5 flex flex-col gap-3 sm:mb-6 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Special Hours</h1>
           <p className="text-gray-500 text-sm mt-0.5">
@@ -46,7 +99,7 @@ export default function SpecialHoursPage() {
           </p>
         </div>
         {isAdmin && (
-          <Button onClick={() => setShowCreate(true)}>
+          <Button onClick={() => setShowCreate(true)} className="w-full sm:w-auto">
             <Plus size={16} />
             Add Special Hours
           </Button>
@@ -70,9 +123,9 @@ export default function SpecialHoursPage() {
         ) : (
           <div className="divide-y divide-gray-100">
             {sorted.map((sh) => (
-              <div key={sh.id} className="flex items-center gap-4 px-6 py-4">
-                <div className="flex-1">
-                  <div className="flex items-center gap-2 mb-0.5">
+              <div key={sh.id} className="flex flex-col gap-3 px-4 py-4 sm:flex-row sm:items-center sm:gap-4 sm:px-6">
+                <div className="min-w-0 flex-1">
+                  <div className="mb-0.5 flex flex-wrap items-center gap-2">
                     <span className="font-medium text-gray-900">{formatDate(sh.date)}</span>
                     {sh.is_closed ? (
                       <Badge color="red">Closed</Badge>
@@ -86,7 +139,7 @@ export default function SpecialHoursPage() {
                     </span>
                   )}
                   {sh.reason && (
-                    <span className="text-sm text-gray-400 ml-2 italic">"{sh.reason}"</span>
+                    <span className="block break-words text-sm italic text-gray-400 sm:ml-2 sm:inline">"{sh.reason}"</span>
                   )}
                 </div>
                 {isAdmin && (
@@ -132,7 +185,22 @@ function CreateSpecialHoursModal({
     reason: '',
   });
   const [error, setError] = useState('');
-  const set = (p: Partial<SpecialHoursCreate>) => setForm((f) => ({ ...f, ...p }));
+  const [showConflictWarning, setShowConflictWarning] = useState(false);
+  const set = (p: Partial<SpecialHoursCreate>) => {
+    setForm((f) => ({ ...f, ...p }));
+    setShowConflictWarning(false);
+  };
+
+  const { data: reservations = [], isLoading: loadingReservations } = useQuery({
+    queryKey: ['reservations', 'specialHoursConflict', form.date],
+    queryFn: () => reservationsApi.list({ start_date: form.date, end_date: form.date }),
+    enabled: open && Boolean(form.date),
+  });
+
+  const conflicts = useMemo(
+    () => impactedReservations(form, reservations),
+    [form, reservations]
+  );
 
   const mutation = useMutation({
     mutationFn: () =>
@@ -155,6 +223,10 @@ function CreateSpecialHoursModal({
         onSubmit={(e) => {
           e.preventDefault();
           setError('');
+          if (!showConflictWarning && conflicts.length > 0) {
+            setShowConflictWarning(true);
+            return;
+          }
           mutation.mutate();
         }}
         className="flex flex-col gap-4"
@@ -179,30 +251,51 @@ function CreateSpecialHoursModal({
           label="Closed this day"
         />
         {!form.is_closed && (
-          <div className="grid grid-cols-2 gap-4">
-            <div className="flex flex-col gap-1">
-              <label className="text-sm font-medium text-gray-700">Open Time</label>
-              <input
-                type="time"
-                value={form.open_time ?? ''}
-                onChange={(e) => set({ open_time: e.target.value })}
-                className="rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-              />
-            </div>
-            <div className="flex flex-col gap-1">
-              <label className="text-sm font-medium text-gray-700">Close Time</label>
-              <input
-                type="time"
-                value={form.close_time ?? ''}
-                onChange={(e) => set({ close_time: e.target.value })}
-                className="rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-              />
-            </div>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <Select
+              label="Open Time"
+              value={form.open_time ?? ''}
+              options={SPECIAL_HOUR_TIME_OPTIONS}
+              onChange={(e) => set({ open_time: e.target.value })}
+            />
+            <Select
+              label="Close Time"
+              value={form.close_time ?? ''}
+              options={SPECIAL_HOUR_TIME_OPTIONS}
+              onChange={(e) => set({ close_time: e.target.value })}
+            />
           </div>
         )}
-        <div className="flex justify-end gap-3 pt-2">
-          <Button variant="outline" type="button" onClick={onClose}>Cancel</Button>
-          <Button type="submit" loading={mutation.isPending}>Save</Button>
+        {showConflictWarning && conflicts.length > 0 && (
+          <Alert variant="warning" title="Existing reservations affected">
+            <p>
+              These special hours conflict with {conflicts.length} active reservation
+              {conflicts.length === 1 ? '' : 's'}. You can still save, but the team may
+              need to contact guests or adjust tables.
+            </p>
+            <ul className="mt-2 list-disc space-y-1 pl-5">
+              {conflicts.slice(0, 5).map((reservation) => (
+                <li key={reservation.id}>
+                  {reservationTimeRange(reservation)} · {reservation.guest_name} ·{' '}
+                  {reservation.party_size} guests
+                </li>
+              ))}
+              {conflicts.length > 5 && (
+                <li>+{conflicts.length - 5} more reservations</li>
+              )}
+            </ul>
+          </Alert>
+        )}
+        <div className="flex flex-col-reverse gap-3 pt-2 sm:flex-row sm:justify-end">
+          <Button variant="outline" type="button" onClick={onClose} className="w-full sm:w-auto">Cancel</Button>
+          <Button
+            type="submit"
+            loading={mutation.isPending}
+            disabled={loadingReservations}
+            className="w-full sm:w-auto"
+          >
+            {showConflictWarning && conflicts.length > 0 ? 'Save Anyway' : 'Save'}
+          </Button>
         </div>
       </form>
     </Modal>

@@ -66,7 +66,7 @@ export default function SetupHours({ onNext, onBack }: Props) {
 
   return (
     <form onSubmit={handleSubmit}>
-      <div className="px-8 py-6 border-b border-gray-100 flex items-center gap-3">
+      <div className="flex items-center gap-3 border-b border-gray-100 px-4 py-5 sm:px-8 sm:py-6">
         <div className="bg-purple-100 text-purple-600 rounded-xl p-2.5">
           <Clock size={22} />
         </div>
@@ -76,12 +76,12 @@ export default function SetupHours({ onNext, onBack }: Props) {
         </div>
       </div>
 
-      <div className="px-8 py-6">
+      <div className="px-4 py-5 sm:px-8 sm:py-6">
         {error && <Alert variant="error" className="mb-4">{error}</Alert>}
 
         {/* Quick apply */}
-        <div className="flex items-center gap-2 mb-5 pb-5 border-b border-gray-100">
-          <span className="text-sm text-gray-600 mr-1">Quick apply Mon hours to all days:</span>
+        <div className="mb-5 flex flex-col gap-2 border-b border-gray-100 pb-5 sm:flex-row sm:items-center">
+          <span className="text-sm text-gray-600 sm:mr-1">Quick apply Mon hours to all days:</span>
           <Button
             type="button"
             variant="outline"
@@ -94,26 +94,26 @@ export default function SetupHours({ onNext, onBack }: Props) {
 
         <div className="flex flex-col gap-3">
           {DAY_NAMES.map((day, i) => (
-            <div key={i} className="flex items-center gap-4">
-              <span className="text-sm font-medium text-gray-700 w-28 shrink-0">{day}</span>
+            <div key={i} className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-4">
+              <span className="w-full text-sm font-medium text-gray-700 sm:w-28 sm:shrink-0">{day}</span>
               <Toggle
                 checked={!days[i].is_closed}
                 onChange={(open) => updateDay(i, { is_closed: !open })}
               />
               {!days[i].is_closed ? (
-                <div className="flex items-center gap-2 flex-1">
+                <div className="flex flex-1 flex-wrap items-center gap-2">
                   <input
                     type="time"
                     value={days[i].open_time}
                     onChange={(e) => updateDay(i, { open_time: e.target.value })}
-                    className="rounded-lg border border-gray-300 px-2 py-1.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    className="min-h-10 rounded-lg border border-gray-300 px-2 py-1.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                   />
                   <span className="text-gray-400 text-sm">to</span>
                   <input
                     type="time"
                     value={days[i].close_time}
                     onChange={(e) => updateDay(i, { close_time: e.target.value })}
-                    className="rounded-lg border border-gray-300 px-2 py-1.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    className="min-h-10 rounded-lg border border-gray-300 px-2 py-1.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                   />
                 </div>
               ) : (
@@ -124,12 +124,12 @@ export default function SetupHours({ onNext, onBack }: Props) {
         </div>
       </div>
 
-      <div className="px-8 py-4 bg-gray-50 border-t border-gray-100 flex justify-between">
-        <Button type="button" variant="ghost" onClick={onBack}>
+      <div className="flex flex-col-reverse gap-3 border-t border-gray-100 bg-gray-50 px-4 py-4 sm:flex-row sm:justify-between sm:px-8">
+        <Button type="button" variant="ghost" onClick={onBack} className="w-full sm:w-auto">
           <ChevronLeft size={18} />
           Back
         </Button>
-        <Button type="submit" loading={mutation.isPending} size="lg">
+        <Button type="submit" loading={mutation.isPending} size="lg" className="w-full sm:w-auto">
           Continue
           <ChevronRight size={18} />
         </Button>

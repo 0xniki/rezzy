@@ -36,13 +36,13 @@ export default function TablesPage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
+      <div className="mb-5 flex flex-col gap-3 sm:mb-6 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Tables</h1>
           <p className="text-gray-500 text-sm mt-0.5">Manage seating layout</p>
         </div>
         {isAdmin && (
-          <Button onClick={() => setShowCreate(true)}>
+          <Button onClick={() => setShowCreate(true)} className="w-full sm:w-auto">
             <Plus size={16} />
             Add Table
           </Button>
@@ -54,13 +54,13 @@ export default function TablesPage() {
         {tables.map((table) => (
           <Card key={table.id} className={!table.is_active ? 'opacity-60' : ''}>
             <CardBody>
-              <div className="flex items-start justify-between mb-3">
-                <div className="flex items-center gap-2">
-                  <span className="font-bold text-lg text-gray-900">{table.table_number}</span>
+              <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                <div className="flex min-w-0 flex-wrap items-center gap-2">
+                  <span className="truncate text-lg font-bold text-gray-900">{table.table_number}</span>
                   {!table.is_active && <Badge color="gray">Inactive</Badge>}
                 </div>
                 {isAdmin && (
-                  <div className="flex gap-1">
+                  <div className="flex flex-wrap gap-1">
                     <Button variant="ghost" size="sm" onClick={() => setAdjustTable(table)}>
                       <Armchair size={14} />
                     </Button>
@@ -96,7 +96,7 @@ export default function TablesPage() {
           </Card>
         ))}
         {tables.length === 0 && (
-          <div className="col-span-3 py-12 text-center text-gray-400">
+          <div className="py-12 text-center text-gray-400 md:col-span-2 lg:col-span-3">
             No tables yet. Add your first table.
           </div>
         )}
@@ -156,7 +156,7 @@ function CreateTableModal({ open, onClose }: { open: boolean; onClose: () => voi
           onChange={(e) => set({ table_number: e.target.value })}
           required
         />
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Input
             label="Default Chairs"
             type="number"
@@ -172,9 +172,9 @@ function CreateTableModal({ open, onClose }: { open: boolean; onClose: () => voi
             onChange={(e) => set({ max_chairs: parseInt(e.target.value) || 1 })}
           />
         </div>
-        <div className="flex justify-end gap-3 pt-2">
-          <Button variant="outline" type="button" onClick={onClose}>Cancel</Button>
-          <Button type="submit" loading={mutation.isPending}>Add Table</Button>
+        <div className="flex flex-col-reverse gap-3 pt-2 sm:flex-row sm:justify-end">
+          <Button variant="outline" type="button" onClick={onClose} className="w-full sm:w-auto">Cancel</Button>
+          <Button type="submit" loading={mutation.isPending} className="w-full sm:w-auto">Add Table</Button>
         </div>
       </form>
     </Modal>
@@ -219,7 +219,7 @@ function EditTableModal({ table, onClose }: { table: Table; onClose: () => void 
           value={form.table_number ?? ''}
           onChange={(e) => set({ table_number: e.target.value })}
         />
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Input
             label="Default Chairs"
             type="number"
@@ -240,9 +240,9 @@ function EditTableModal({ table, onClose }: { table: Table; onClose: () => void 
           onChange={(v) => set({ is_active: v })}
           label="Active"
         />
-        <div className="flex justify-end gap-3 pt-2">
-          <Button variant="outline" type="button" onClick={onClose}>Cancel</Button>
-          <Button type="submit" loading={mutation.isPending}>Save Changes</Button>
+        <div className="flex flex-col-reverse gap-3 pt-2 sm:flex-row sm:justify-end">
+          <Button variant="outline" type="button" onClick={onClose} className="w-full sm:w-auto">Cancel</Button>
+          <Button type="submit" loading={mutation.isPending} className="w-full sm:w-auto">Save Changes</Button>
         </div>
       </form>
     </Modal>
@@ -291,9 +291,9 @@ function AdjustChairsModal({ table, onClose }: { table: Table; onClose: () => vo
         <div className="text-sm text-gray-500">
           Default {table.default_chairs}, max {table.max_chairs}
         </div>
-        <div className="flex justify-end gap-3 pt-2">
-          <Button variant="outline" type="button" onClick={onClose}>Cancel</Button>
-          <Button type="submit" loading={mutation.isPending}>Save Chairs</Button>
+        <div className="flex flex-col-reverse gap-3 pt-2 sm:flex-row sm:justify-end">
+          <Button variant="outline" type="button" onClick={onClose} className="w-full sm:w-auto">Cancel</Button>
+          <Button type="submit" loading={mutation.isPending} className="w-full sm:w-auto">Save Chairs</Button>
         </div>
       </form>
     </Modal>

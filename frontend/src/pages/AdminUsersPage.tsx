@@ -22,7 +22,7 @@ export default function AdminUsersPage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
+      <div className="mb-5 flex flex-col gap-3 sm:mb-6 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">User Approval</h1>
           <p className="text-gray-500 text-sm mt-0.5">Approve staff accounts after signup</p>
@@ -48,10 +48,10 @@ export default function AdminUsersPage() {
               {users.map((user) => {
                 const pending = pendingUsers.some((u) => u.id === user.id);
                 return (
-                  <div key={user.id} className="flex items-center gap-4 px-6 py-4">
+                  <div key={user.id} className="flex flex-col gap-3 px-4 py-4 sm:flex-row sm:items-center sm:gap-4 sm:px-6">
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium text-gray-900">{user.username}</span>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="min-w-0 max-w-full truncate font-medium text-gray-900">{user.username}</span>
                         <Badge color={user.role === 'admin' ? 'purple' : 'blue'}>{user.role}</Badge>
                         <Badge color={user.is_active ? 'green' : 'yellow'}>
                           {user.is_active ? 'active' : 'pending'}
@@ -66,6 +66,7 @@ export default function AdminUsersPage() {
                         size="sm"
                         onClick={() => approveMutation.mutate(user.id)}
                         loading={approveMutation.isPending}
+                        className="w-full sm:w-auto"
                       >
                         <UserCheck size={14} />
                         Approve

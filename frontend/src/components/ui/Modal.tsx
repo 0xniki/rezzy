@@ -21,34 +21,35 @@ export default function Modal({ open, onClose, title, children, size = 'md' }: M
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-50 flex items-end justify-center p-0 sm:items-center sm:p-4">
       <div
         className="absolute inset-0 bg-black/40 backdrop-blur-sm"
         onClick={onClose}
       />
       <div
         className={cn(
-          'relative bg-white rounded-2xl shadow-xl w-full max-h-[90vh] flex flex-col',
+          'relative flex h-[100dvh] max-h-[100dvh] w-full flex-col rounded-t-2xl bg-white shadow-xl sm:h-auto sm:max-h-[90vh] sm:rounded-2xl',
           {
-            'max-w-sm': size === 'sm',
-            'max-w-lg': size === 'md',
-            'max-w-2xl': size === 'lg',
-            'max-w-4xl': size === 'xl',
+            'sm:max-w-sm': size === 'sm',
+            'sm:max-w-lg': size === 'md',
+            'sm:max-w-2xl': size === 'lg',
+            'sm:max-w-4xl': size === 'xl',
           }
         )}
       >
         {title && (
-          <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
-            <h2 className="text-lg font-semibold text-gray-900">{title}</h2>
+          <div className="flex items-center justify-between border-b border-gray-100 px-4 py-4 sm:px-6">
+            <h2 className="min-w-0 pr-3 text-lg font-semibold text-gray-900">{title}</h2>
             <button
               onClick={onClose}
-              className="text-gray-400 hover:text-gray-600 transition-colors"
+              className="rounded-lg p-2 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600"
+              aria-label="Close"
             >
               <X size={20} />
             </button>
           </div>
         )}
-        <div className="overflow-y-auto flex-1 px-6 py-5">{children}</div>
+        <div className="flex-1 overflow-y-auto px-4 py-4 sm:px-6 sm:py-5">{children}</div>
       </div>
     </div>
   );

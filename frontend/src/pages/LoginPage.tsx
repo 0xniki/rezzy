@@ -40,10 +40,10 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
+    <div className="flex min-h-dvh items-center justify-center bg-gray-50 px-4 py-6">
       <div className="w-full max-w-sm">
         {/* Logo */}
-        <div className="flex flex-col items-center mb-8">
+        <div className="mb-6 flex flex-col items-center sm:mb-8">
           <div className="bg-blue-600 text-white rounded-2xl p-3 mb-3 shadow-lg">
             <UtensilsCrossed size={28} />
           </div>
@@ -54,7 +54,7 @@ export default function LoginPage() {
         </div>
 
         {/* Card */}
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-8">
+        <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm sm:p-8">
           <form onSubmit={handleSubmit} className="flex flex-col gap-4">
             {error && <Alert variant="error">{error}</Alert>}
             {success && <Alert variant="success">{success}</Alert>}

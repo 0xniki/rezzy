@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { reservationsApi } from '../api/reservations';
+import { operatingHoursApi, specialHoursApi } from '../api/hours';
 import { Card, CardHeader, CardBody } from '../components/ui/Card';
 import Button from '../components/ui/Button';
 import Badge from '../components/ui/Badge';
@@ -10,7 +11,15 @@ import Select from '../components/ui/Select';
 import Alert from '../components/ui/Alert';
 import { Plus, Search, CalendarDays, Users, Phone, ChevronLeft, ChevronRight, Armchair, LayoutGrid, AlertCircle } from 'lucide-react';
 import { formatTime, formatDate, todayString } from '../lib/utils';
-import type { Reservation, ReservationCreate, ReservationStatus, AvailableOption } from '../types';
+import type {
+  Reservation,
+  ReservationCreate,
+  ReservationUpdate,
+  ReservationStatus,
+  AvailableOption,
+  OperatingHours,
+  SpecialHours,
+} from '../types';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -33,6 +42,7 @@ function timeSlots(): string[] {
   return slots;
 }
 const TIME_SLOTS = timeSlots();
+const RESERVATION_CUTOFF_MINUTES = 30;
 
 /** Format "HH:MM" → "12:00 AM / PM" for display */
 function formatSlot(t: string): string {
@@ -62,6 +72,72 @@ function validatePartyAndPhone(partySize: number | null, phoneNumber: string): s
   return null;
 }
 
+function parseDateString(date: string): Date {
+  const [year, month, day] = date.split('-').map(Number);
+  return new Date(year, month - 1, day);
+}
+
+function backendDayOfWeek(date: string): number {
+  return (parseDateString(date).getDay() + 6) % 7;
+}
+
+function normalizeTime(time: string): string {
+  return time.slice(0, 5);
+}
+
+function timeToMinutes(time: string): number {
+  const [hours, minutes] = normalizeTime(time).split(':').map(Number);
+  return hours * 60 + minutes;
+}
+
+function findEffectiveHours(
+  date: string,
+  operatingHours: OperatingHours[],
+  specialHours: SpecialHours[]
+): { open_time: string | null; close_time: string | null; is_closed: boolean } | null {
+  const special = specialHours.find((h) => h.date === date);
+  if (special) return special;
+
+  return operatingHours.find((h) => h.day_of_week === backendDayOfWeek(date)) ?? null;
+}
+
+function bookableTimeSlots(
+  date: string,
+  operatingHours: OperatingHours[],
+  specialHours: SpecialHours[]
+): string[] {
+  const hours = findEffectiveHours(date, operatingHours, specialHours);
+  if (!hours || hours.is_closed || !hours.open_time || !hours.close_time) return [];
+
+  const openMinutes = timeToMinutes(hours.open_time);
+  const cutoffMinutes = timeToMinutes(hours.close_time) - RESERVATION_CUTOFF_MINUTES;
+
+  return TIME_SLOTS.filter((slot) => {
+    const slotMinutes = timeToMinutes(slot);
+    return (
+      slotMinutes >= openMinutes &&
+      slotMinutes <= cutoffMinutes &&
+      !isPastReservationSlot(date, slot)
+    );
+  });
+}
+
+function useBookableTimeSlots(date: string) {
+  const { data: operatingHours = [], isLoading: loadingOperatingHours } = useQuery({
+    queryKey: ['operatingHours'],
+    queryFn: operatingHoursApi.list,
+  });
+  const { data: specialHours = [], isLoading: loadingSpecialHours } = useQuery({
+    queryKey: ['specialHours', date],
+    queryFn: () => specialHoursApi.list(date, date),
+  });
+
+  return {
+    options: bookableTimeSlots(date, operatingHours, specialHours),
+    isLoading: loadingOperatingHours || loadingSpecialHours,
+  };
+}
+
 const STATUS_COLORS: Record<ReservationStatus, 'green' | 'blue' | 'gray' | 'red' | 'orange' | 'purple' | 'yellow'> = {
   confirmed: 'blue',
   seated: 'green',
@@ -89,6 +165,13 @@ function toISO(date: Date): string {
   const month = String(date.getMonth() + 1).padStart(2, '0');
   const day = String(date.getDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
+}
+
+function defaultSelectedDateForWeek(weekStart: Date): string {
+  const start = toISO(weekStart);
+  const end = toISO(addDays(weekStart, 6));
+  const today = todayString();
+  return today >= start && today <= end ? today : start;
 }
 
 function isPastReservationSlot(date: string, time: string): boolean {
@@ -132,6 +215,17 @@ export default function ReservationsPage() {
   const startDate = toISO(weekStart);
   const endDate = toISO(addDays(weekStart, 6));
 
+  const goToWeek = (nextWeekStart: Date) => {
+    setWeekStart(nextWeekStart);
+    setSelectedDate(defaultSelectedDateForWeek(nextWeekStart));
+  };
+
+  const jumpToDate = (date: string) => {
+    if (!date) return;
+    setSelectedDate(date);
+    setWeekStart(getWeekStart(parseDateString(date)));
+  };
+
   const { data: reservations = [] } = useQuery({
     queryKey: ['reservations', startDate, endDate],
     queryFn: () => reservationsApi.list({ start_date: startDate, end_date: endDate }),
@@ -159,12 +253,12 @@ export default function ReservationsPage() {
   return (
     <div>
       {/* Header */}
-      <div className="flex items-center justify-between mb-6">
+      <div className="mb-5 flex flex-col gap-3 sm:mb-6 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Reservations</h1>
           <p className="text-gray-500 text-sm mt-0.5">Manage bookings and guest assignments</p>
         </div>
-        <Button onClick={() => setShowCreate(true)}>
+        <Button onClick={() => setShowCreate(true)} className="w-full sm:w-auto">
           <Plus size={16} />
           New Reservation
         </Button>
@@ -172,15 +266,31 @@ export default function ReservationsPage() {
 
       {/* Week selector */}
       <Card className="mb-6">
-        <div className="px-4 py-3 flex items-center gap-2">
+        <div className="flex flex-col gap-3 border-b border-gray-100 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="text-sm font-medium text-gray-900">
+              {formatDate(startDate)} - {formatDate(endDate)}
+            </p>
+          </div>
+          <label className="flex w-full flex-col gap-1 text-sm font-medium text-gray-700 sm:w-52">
+            Date
+            <input
+              type="date"
+              value={selectedDate}
+              onChange={(e) => jumpToDate(e.target.value)}
+              className="min-h-10 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm transition-colors focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            />
+          </label>
+        </div>
+        <div className="flex items-center gap-2 px-2 py-3 sm:px-4">
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => setWeekStart((w) => addDays(w, -7))}
+            onClick={() => goToWeek(addDays(weekStart, -7))}
           >
             <ChevronLeft size={16} />
           </Button>
-          <div className="flex-1 grid grid-cols-7 gap-1">
+          <div key={startDate} className="grid flex-1 grid-cols-7 gap-1 overflow-x-auto animate-rezzy-fade-slide">
             {weekDays.map(({ date, iso, count }) => {
               const isSelected = iso === selectedDate;
               const isToday = iso === todayString();
@@ -188,7 +298,7 @@ export default function ReservationsPage() {
                 <button
                   key={iso}
                   onClick={() => setSelectedDate(iso)}
-                  className={`flex flex-col items-center rounded-xl py-2 px-1 text-xs transition-colors ${
+                  className={`flex min-w-10 flex-col items-center rounded-xl px-1 py-2 text-xs transition-colors sm:min-w-0 ${
                     isSelected
                       ? 'bg-blue-600 text-white'
                       : 'hover:bg-gray-50 text-gray-700'
@@ -220,7 +330,7 @@ export default function ReservationsPage() {
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => setWeekStart((w) => addDays(w, 7))}
+            onClick={() => goToWeek(addDays(weekStart, 7))}
           >
             <ChevronRight size={16} />
           </Button>
@@ -228,7 +338,7 @@ export default function ReservationsPage() {
       </Card>
 
       {/* Day's reservations */}
-      <Card>
+      <Card key={selectedDate} className="animate-rezzy-fade-slide">
         <CardHeader>
           <h2 className="font-semibold text-gray-900">
             {formatDate(selectedDate)}
@@ -254,16 +364,16 @@ export default function ReservationsPage() {
                 return (
                   <div
                     key={r.id}
-                    className={`flex items-center gap-4 px-6 py-4 transition-colors ${
+                    className={`flex flex-col gap-3 px-4 py-4 transition-colors sm:flex-row sm:items-center sm:gap-4 sm:px-6 ${
                       soon ? 'bg-red-50 hover:bg-red-100' : 'hover:bg-gray-50'
                     }`}
                   >
-                    <div className="flex flex-col items-center w-16 shrink-0">
+                    <div className="flex w-full items-start justify-between gap-3 sm:w-16 sm:shrink-0 sm:flex-col sm:items-center">
                       <span className="text-sm font-bold text-gray-900">{formatTime(r.reservation_time)}</span>
                       <span className="text-xs text-gray-400">{r.duration_minutes}m</span>
                     </div>
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-0.5">
+                      <div className="mb-0.5 flex flex-wrap items-center gap-2">
                         {soon && (
                           <span title="Starting within 1 hour — place reserve sign">
                             <AlertCircle size={16} className="text-red-500 shrink-0 animate-pulse" />
@@ -272,7 +382,7 @@ export default function ReservationsPage() {
                         <span className="font-medium text-gray-900">{r.guest_name}</span>
                         <Badge color={STATUS_COLORS[r.status]}>{r.status}</Badge>
                       </div>
-                      <div className="flex items-center gap-3 text-xs text-gray-500">
+                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-500">
                         <span className="flex items-center gap-1">
                           <Users size={12} />
                           {r.party_size} guests
@@ -288,11 +398,11 @@ export default function ReservationsPage() {
                           </span>
                         )}
                         {r.notes && (
-                          <span className="truncate max-w-xs italic">"{r.notes}"</span>
+                          <span className="max-w-full truncate italic sm:max-w-xs">"{r.notes}"</span>
                         )}
                       </div>
                     </div>
-                    <div className="flex items-center gap-2 shrink-0">
+                    <div className="flex w-full shrink-0 items-center gap-2 sm:w-auto">
                       <Button variant="ghost" size="sm" onClick={() => setEditRes(r)}>
                         Edit
                       </Button>
@@ -339,30 +449,37 @@ function TimeSelect({
   label,
   value,
   onChange,
-  selectedDate,
-  disallowPast = false,
+  options,
+  disabled = false,
+  preserveInvalidValue = false,
 }: {
   label: string;
   value: string;
   onChange: (v: string) => void;
-  selectedDate?: string;
-  disallowPast?: boolean;
+  options: string[];
+  disabled?: boolean;
+  preserveInvalidValue?: boolean;
 }) {
+  const normalizedValue = normalizeTime(value);
+  const renderedOptions =
+    preserveInvalidValue && normalizedValue && !options.includes(normalizedValue)
+      ? [normalizedValue, ...options]
+      : options;
+
   return (
     <div className="flex flex-col gap-1">
       <label className="text-sm font-medium text-gray-700">{label}</label>
       <select
-        value={value}
+        value={renderedOptions.includes(normalizedValue) ? normalizedValue : ''}
+        disabled={disabled || renderedOptions.length === 0}
         onChange={(e) => onChange(e.target.value)}
-        className="rounded-lg border border-gray-300 px-3 py-2 text-sm shadow-sm transition-colors focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 bg-white"
+        className="min-h-10 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm transition-colors focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
       >
-        {TIME_SLOTS.map((t) => (
-          <option
-            key={t}
-            value={t}
-            disabled={disallowPast && selectedDate ? isPastReservationSlot(selectedDate, t) : false}
-          >
+        {renderedOptions.length === 0 && <option value="">No times available</option>}
+        {renderedOptions.map((t) => (
+          <option key={t} value={t}>
             {formatSlot(t)}
+            {preserveInvalidValue && t === normalizedValue && !options.includes(t) ? ' (current)' : ''}
           </option>
         ))}
       </select>
@@ -401,6 +518,12 @@ function CreateReservationModal({ open, onClose, defaultDate }: CreateModalProps
   const [availableOptions, setAvailableOptions] = useState<AvailableOption[]>([]);
   const [searchedAvail, setSearchedAvail] = useState(false);
   const [selectedOption, setSelectedOption] = useState<AvailableOption | null>(null);
+  const { options: currentTimeOptions, isLoading: loadingCurrentTimeOptions } = useBookableTimeSlots(form.reservation_date);
+  const selectedReservationTime =
+    currentTimeOptions.includes(normalizeTime(form.reservation_time))
+      ? normalizeTime(form.reservation_time)
+      : currentTimeOptions[0] ?? '';
+  const noBookableTimes = !loadingCurrentTimeOptions && currentTimeOptions.length === 0;
 
   const resetAvailability = () => {
     setSearchedAvail(false);
@@ -417,7 +540,7 @@ function CreateReservationModal({ open, onClose, defaultDate }: CreateModalProps
     mutationFn: (partySize: number) =>
       reservationsApi.getAvailable({
         reservation_date: form.reservation_date,
-        reservation_time: form.reservation_time,
+        reservation_time: selectedReservationTime,
         party_size: partySize,
         duration_minutes: form.duration_minutes,
       }),
@@ -453,8 +576,8 @@ function CreateReservationModal({ open, onClose, defaultDate }: CreateModalProps
       return;
     }
     if (partySize === null) return;
-    if (isPastReservationSlot(form.reservation_date, form.reservation_time)) {
-      setError('Reservations must be for a future date and time');
+    if (!selectedReservationTime) {
+      setError('No bookable times for this date');
       return;
     }
     if (form.table_ids.length === 0) {
@@ -464,6 +587,7 @@ function CreateReservationModal({ open, onClose, defaultDate }: CreateModalProps
     createMutation.mutate({
       ...form,
       party_size: partySize,
+      reservation_time: selectedReservationTime,
       phone_number: form.phone_number.trim() || null,
       notes: form.notes.trim() || null,
     });
@@ -476,21 +600,19 @@ function CreateReservationModal({ open, onClose, defaultDate }: CreateModalProps
       setError('Party size must be at least 1');
       return;
     }
-    if (isPastReservationSlot(form.reservation_date, form.reservation_time)) {
-      setError('Reservations must be for a future date and time');
+    if (!selectedReservationTime) {
+      setError('No bookable times for this date');
       return;
     }
     searchMutation.mutate(partySize);
   };
-
-  const selectedSlotIsPast = isPastReservationSlot(form.reservation_date, form.reservation_time);
 
   return (
     <Modal open={open} onClose={onClose} title="New Reservation" size="lg">
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
         {error && <Alert variant="error">{error}</Alert>}
 
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Input
             label="Guest Name"
             value={form.guest_name}
@@ -507,7 +629,7 @@ function CreateReservationModal({ open, onClose, defaultDate }: CreateModalProps
           />
         </div>
 
-        <div className="grid grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
           <Input
             label="Date"
             type="date"
@@ -518,9 +640,9 @@ function CreateReservationModal({ open, onClose, defaultDate }: CreateModalProps
           />
           <TimeSelect
             label="Time"
-            value={form.reservation_time}
-            selectedDate={form.reservation_date}
-            disallowPast
+            value={selectedReservationTime}
+            options={currentTimeOptions}
+            disabled={loadingCurrentTimeOptions || noBookableTimes}
             onChange={(v) => set({ reservation_time: v })}
           />
           <Input
@@ -549,8 +671,8 @@ function CreateReservationModal({ open, onClose, defaultDate }: CreateModalProps
         />
 
         {/* Availability search */}
-        <div className="border border-gray-200 rounded-xl p-4 bg-gray-50">
-          <div className="flex items-center justify-between mb-3">
+        <div className="rounded-xl border border-gray-200 bg-gray-50 p-3 sm:p-4">
+          <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <span className="text-sm font-medium text-gray-700">Table Assignment</span>
             <Button
               type="button"
@@ -558,7 +680,7 @@ function CreateReservationModal({ open, onClose, defaultDate }: CreateModalProps
               size="sm"
               onClick={handleFindAvailable}
               loading={searchMutation.isPending}
-              disabled={selectedSlotIsPast}
+              disabled={loadingCurrentTimeOptions || noBookableTimes}
             >
               <Search size={14} />
               Find Available
@@ -568,12 +690,12 @@ function CreateReservationModal({ open, onClose, defaultDate }: CreateModalProps
           {searchedAvail && availableOptions.length === 0 && (
             <Alert variant="warning">No tables available for this time slot</Alert>
           )}
-          {selectedSlotIsPast && (
-            <Alert variant="warning">Choose a future date and time before finding tables</Alert>
+          {noBookableTimes && (
+            <Alert variant="warning">No bookable times for this date</Alert>
           )}
 
           {availableOptions.length > 0 && (
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               {availableOptions.map((opt) => {
                 const isSelected =
                   selectedOption !== null &&
@@ -621,11 +743,11 @@ function CreateReservationModal({ open, onClose, defaultDate }: CreateModalProps
           )}
         </div>
 
-        <div className="flex justify-end gap-3 pt-2">
-          <Button type="button" variant="outline" onClick={onClose}>
+        <div className="flex flex-col-reverse gap-3 pt-2 sm:flex-row sm:justify-end">
+          <Button type="button" variant="outline" onClick={onClose} className="w-full sm:w-auto">
             Cancel
           </Button>
-          <Button type="submit" loading={createMutation.isPending} disabled={selectedSlotIsPast}>
+          <Button type="submit" loading={createMutation.isPending} disabled={loadingCurrentTimeOptions || noBookableTimes} className="w-full sm:w-auto">
             Create Reservation
           </Button>
         </div>
@@ -658,6 +780,25 @@ function EditReservationModal({
   const [availableOptions, setAvailableOptions] = useState<AvailableOption[]>([]);
   const [searchedAvail, setSearchedAvail] = useState(false);
   const [selectedOption, setSelectedOption] = useState<AvailableOption | null>(null);
+  const { options: currentTimeOptions, isLoading: loadingCurrentTimeOptions } = useBookableTimeSlots(form.reservation_date);
+  const originalReservationTime = normalizeTime(reservation.reservation_time);
+  const formReservationTime = normalizeTime(form.reservation_time);
+  const timeUnchanged =
+    form.reservation_date === reservation.reservation_date &&
+    formReservationTime === originalReservationTime &&
+    form.duration_minutes === reservation.duration_minutes;
+  const displayedReservationTime = currentTimeOptions.includes(formReservationTime)
+    ? formReservationTime
+    : timeUnchanged
+    ? formReservationTime
+    : currentTimeOptions[0] ?? '';
+  const selectedTimeIsBookable = currentTimeOptions.includes(displayedReservationTime);
+  const dateTimeChanged =
+    form.reservation_date !== reservation.reservation_date ||
+    displayedReservationTime !== originalReservationTime ||
+    form.duration_minutes !== reservation.duration_minutes;
+  const noBookableTimes = !loadingCurrentTimeOptions && currentTimeOptions.length === 0;
+  const dateTimeChangeBlocked = dateTimeChanged && !selectedTimeIsBookable;
 
   const resetAvailability = () => {
     setSearchedAvail(false);
@@ -674,7 +815,7 @@ function EditReservationModal({
     mutationFn: (partySize: number) =>
       reservationsApi.getAvailable({
         reservation_date: form.reservation_date,
-        reservation_time: form.reservation_time,
+        reservation_time: displayedReservationTime,
         party_size: partySize,
         duration_minutes: form.duration_minutes,
         exclude_reservation_id: reservation.id,
@@ -688,14 +829,24 @@ function EditReservationModal({
   });
 
   const mutation = useMutation({
-    mutationFn: (partySize: number) =>
-      reservationsApi.update(reservation.id, {
-        ...form,
+    mutationFn: (partySize: number) => {
+      const payload: ReservationUpdate = {
+        guest_name: form.guest_name,
         party_size: partySize,
         phone_number: form.phone_number.trim() || null,
         notes: form.notes.trim() || null,
+        status: form.status,
         ...(selectedOption ? { table_ids: selectedOption.table_ids } : {}),
-      }),
+      };
+
+      if (dateTimeChanged) {
+        payload.reservation_date = form.reservation_date;
+        payload.reservation_time = displayedReservationTime;
+        payload.duration_minutes = form.duration_minutes;
+      }
+
+      return reservationsApi.update(reservation.id, payload);
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['reservations'] });
       onClose();
@@ -725,8 +876,8 @@ function EditReservationModal({
       setError('Party size must be at least 1');
       return;
     }
-    if (isPastReservationSlot(form.reservation_date, form.reservation_time)) {
-      setError('Reservations must be for a future date and time');
+    if (!selectedTimeIsBookable) {
+      setError(noBookableTimes ? 'No bookable times for this date' : 'Choose a bookable time before finding tables');
       return;
     }
     searchMutation.mutate(partySize);
@@ -742,6 +893,10 @@ function EditReservationModal({
       return;
     }
     if (partySize === null) return;
+    if (dateTimeChangeBlocked) {
+      setError(noBookableTimes ? 'No bookable times for this date' : 'Choose a bookable time before saving date or time changes');
+      return;
+    }
     mutation.mutate(partySize);
   };
 
@@ -750,7 +905,7 @@ function EditReservationModal({
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
         {error && <Alert variant="error">{error}</Alert>}
 
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Input
             label="Guest Name"
             value={form.guest_name}
@@ -766,7 +921,7 @@ function EditReservationModal({
           />
         </div>
 
-        <div className="grid grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
           <Input
             label="Date"
             type="date"
@@ -775,7 +930,10 @@ function EditReservationModal({
           />
           <TimeSelect
             label="Time"
-            value={form.reservation_time}
+            value={displayedReservationTime}
+            options={currentTimeOptions}
+            disabled={loadingCurrentTimeOptions || (noBookableTimes && !timeUnchanged)}
+            preserveInvalidValue={timeUnchanged}
             onChange={(v) => set({ reservation_time: v }, true)}
           />
           <Input
@@ -809,11 +967,11 @@ function EditReservationModal({
           onChange={(e) => set({ status: e.target.value as ReservationStatus })}
         />
 
-        <div className="border border-gray-200 rounded-xl p-4 bg-gray-50">
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2 text-sm text-gray-600">
+        <div className="rounded-xl border border-gray-200 bg-gray-50 p-3 sm:p-4">
+          <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex min-w-0 items-center gap-2 text-sm text-gray-600">
               <LayoutGrid size={14} className="shrink-0" />
-              <span>Current: {tableLabel}</span>
+              <span className="truncate">Current: {tableLabel}</span>
             </div>
             <Button
               type="button"
@@ -821,6 +979,7 @@ function EditReservationModal({
               size="sm"
               onClick={handleFindAvailable}
               loading={searchMutation.isPending}
+              disabled={loadingCurrentTimeOptions || !selectedTimeIsBookable}
             >
               <Search size={14} />
               Find Tables
@@ -830,9 +989,16 @@ function EditReservationModal({
           {searchedAvail && availableOptions.length === 0 && (
             <Alert variant="warning">No tables available for this time slot</Alert>
           )}
+          {!loadingCurrentTimeOptions && !selectedTimeIsBookable && (
+            <Alert variant="warning">
+              {noBookableTimes
+                ? 'No bookable times for this date'
+                : 'Choose a bookable time before finding tables'}
+            </Alert>
+          )}
 
           {availableOptions.length > 0 && (
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               {availableOptions.map((opt) => {
                 const isSelected =
                   selectedOption !== null &&
@@ -880,11 +1046,11 @@ function EditReservationModal({
           )}
         </div>
 
-        <div className="flex justify-end gap-3 pt-2">
-          <Button type="button" variant="outline" onClick={onClose}>
+        <div className="flex flex-col-reverse gap-3 pt-2 sm:flex-row sm:justify-end">
+          <Button type="button" variant="outline" onClick={onClose} className="w-full sm:w-auto">
             Cancel
           </Button>
-          <Button type="submit" loading={mutation.isPending}>
+          <Button type="submit" loading={mutation.isPending} disabled={loadingCurrentTimeOptions || dateTimeChangeBlocked} className="w-full sm:w-auto">
             Save Changes
           </Button>
         </div>
