@@ -26,8 +26,11 @@ client.interceptors.response.use(
       localStorage.removeItem('rezzy_role');
       window.location.href = '/login';
     }
+    const detail = err.response?.data?.detail;
     const msg =
-      err.response?.data?.detail ??
+      Array.isArray(detail) && detail[0]?.msg
+        ? String(detail[0].msg).replace(/^Value error, /, '')
+        : detail ??
       err.response?.data?.message ??
       err.message ??
       'Unknown error';

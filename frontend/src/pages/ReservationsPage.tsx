@@ -42,6 +42,26 @@ function formatSlot(t: string): string {
   return `${h12}:${String(m).padStart(2, '0')} ${ampm}`;
 }
 
+const PHONE_PATTERN = /^(\d{10}|\d{3}-\d{3}-\d{4})$/;
+
+function parsePartySize(value: string): number | null {
+  const trimmed = value.trim();
+  if (!/^\d+$/.test(trimmed)) return null;
+
+  const parsed = Number(trimmed);
+  return parsed > 0 ? parsed : null;
+}
+
+function validatePartyAndPhone(partySize: number | null, phoneNumber: string): string | null {
+  const phone = phoneNumber.trim();
+  if (partySize === null) return 'Party size must be at least 1';
+  if (partySize >= 4 && !phone) return 'Phone number is required for parties of 4 or more';
+  if (phone && !PHONE_PATTERN.test(phone)) {
+    return 'Phone number must be 10 digits or formatted as 123-456-7890';
+  }
+  return null;
+}
+
 const STATUS_COLORS: Record<ReservationStatus, 'green' | 'blue' | 'gray' | 'red' | 'orange' | 'purple' | 'yellow'> = {
   confirmed: 'blue',
   seated: 'green',
@@ -65,7 +85,32 @@ function addDays(date: Date, n: number): Date {
 }
 
 function toISO(date: Date): string {
-  return date.toISOString().split('T')[0];
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function isPastReservationSlot(date: string, time: string): boolean {
+  const normalizedTime = time.length === 5 ? `${time}:00` : time;
+  return new Date(`${date}T${normalizedTime}`) <= new Date();
+}
+
+function initialReservationSlot(defaultDate: string) {
+  const today = todayString();
+  const date = defaultDate < today ? today : defaultDate;
+  const preferredTime = '19:00';
+
+  if (!isPastReservationSlot(date, preferredTime)) {
+    return { date, time: preferredTime };
+  }
+
+  const futureSlot = TIME_SLOTS.find((slot) => !isPastReservationSlot(date, slot));
+  if (futureSlot) {
+    return { date, time: futureSlot };
+  }
+
+  return { date: toISO(addDays(new Date(), 1)), time: '00:00' };
 }
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
@@ -271,11 +316,13 @@ export default function ReservationsPage() {
         </CardBody>
       </Card>
 
-      <CreateReservationModal
-        open={showCreate}
-        onClose={() => setShowCreate(false)}
-        defaultDate={selectedDate}
-      />
+      {showCreate && (
+        <CreateReservationModal
+          open={showCreate}
+          onClose={() => setShowCreate(false)}
+          defaultDate={selectedDate}
+        />
+      )}
       {editRes && (
         <EditReservationModal
           reservation={editRes}
@@ -292,10 +339,14 @@ function TimeSelect({
   label,
   value,
   onChange,
+  selectedDate,
+  disallowPast = false,
 }: {
   label: string;
   value: string;
   onChange: (v: string) => void;
+  selectedDate?: string;
+  disallowPast?: boolean;
 }) {
   return (
     <div className="flex flex-col gap-1">
@@ -306,7 +357,13 @@ function TimeSelect({
         className="rounded-lg border border-gray-300 px-3 py-2 text-sm shadow-sm transition-colors focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 bg-white"
       >
         {TIME_SLOTS.map((t) => (
-          <option key={t} value={t}>{formatSlot(t)}</option>
+          <option
+            key={t}
+            value={t}
+            disabled={disallowPast && selectedDate ? isPastReservationSlot(selectedDate, t) : false}
+          >
+            {formatSlot(t)}
+          </option>
         ))}
       </select>
     </div>
@@ -321,13 +378,20 @@ interface CreateModalProps {
   defaultDate: string;
 }
 
+type CreateReservationForm = Omit<ReservationCreate, 'party_size' | 'phone_number' | 'notes'> & {
+  party_size: string;
+  phone_number: string;
+  notes: string;
+};
+
 function CreateReservationModal({ open, onClose, defaultDate }: CreateModalProps) {
   const qc = useQueryClient();
-  const [form, setForm] = useState<ReservationCreate>({
+  const initialSlot = initialReservationSlot(defaultDate);
+  const [form, setForm] = useState<CreateReservationForm>({
     guest_name: '',
-    party_size: 2,
-    reservation_date: defaultDate,
-    reservation_time: '19:00',
+    party_size: '2',
+    reservation_date: initialSlot.date,
+    reservation_time: initialSlot.time,
     duration_minutes: 90,
     phone_number: '',
     notes: '',
@@ -344,17 +408,17 @@ function CreateReservationModal({ open, onClose, defaultDate }: CreateModalProps
     setSelectedOption(null);
   };
 
-  const set = (patch: Partial<ReservationCreate>) => {
+  const set = (patch: Partial<CreateReservationForm>) => {
     setForm((f) => ({ ...f, ...patch }));
     resetAvailability();
   };
 
   const searchMutation = useMutation({
-    mutationFn: () =>
+    mutationFn: (partySize: number) =>
       reservationsApi.getAvailable({
         reservation_date: form.reservation_date,
         reservation_time: form.reservation_time,
-        party_size: form.party_size,
+        party_size: partySize,
         duration_minutes: form.duration_minutes,
       }),
     onSuccess: (data) => {
@@ -366,7 +430,7 @@ function CreateReservationModal({ open, onClose, defaultDate }: CreateModalProps
   });
 
   const createMutation = useMutation({
-    mutationFn: () => reservationsApi.create(form),
+    mutationFn: (payload: ReservationCreate) => reservationsApi.create(payload),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['reservations'] });
       onClose();
@@ -382,12 +446,44 @@ function CreateReservationModal({ open, onClose, defaultDate }: CreateModalProps
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    const partySize = parsePartySize(form.party_size);
+    const validationError = validatePartyAndPhone(partySize, form.phone_number);
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
+    if (partySize === null) return;
+    if (isPastReservationSlot(form.reservation_date, form.reservation_time)) {
+      setError('Reservations must be for a future date and time');
+      return;
+    }
     if (form.table_ids.length === 0) {
       setError('Please search for availability and select a table assignment');
       return;
     }
-    createMutation.mutate();
+    createMutation.mutate({
+      ...form,
+      party_size: partySize,
+      phone_number: form.phone_number.trim() || null,
+      notes: form.notes.trim() || null,
+    });
   };
+
+  const handleFindAvailable = () => {
+    setError('');
+    const partySize = parsePartySize(form.party_size);
+    if (partySize === null) {
+      setError('Party size must be at least 1');
+      return;
+    }
+    if (isPastReservationSlot(form.reservation_date, form.reservation_time)) {
+      setError('Reservations must be for a future date and time');
+      return;
+    }
+    searchMutation.mutate(partySize);
+  };
+
+  const selectedSlotIsPast = isPastReservationSlot(form.reservation_date, form.reservation_time);
 
   return (
     <Modal open={open} onClose={onClose} title="New Reservation" size="lg">
@@ -406,7 +502,7 @@ function CreateReservationModal({ open, onClose, defaultDate }: CreateModalProps
             type="number"
             min="1"
             value={form.party_size}
-            onChange={(e) => set({ party_size: parseInt(e.target.value) || 1 })}
+            onChange={(e) => set({ party_size: e.target.value })}
             required
           />
         </div>
@@ -415,6 +511,7 @@ function CreateReservationModal({ open, onClose, defaultDate }: CreateModalProps
           <Input
             label="Date"
             type="date"
+            min={todayString()}
             value={form.reservation_date}
             onChange={(e) => set({ reservation_date: e.target.value })}
             required
@@ -422,6 +519,8 @@ function CreateReservationModal({ open, onClose, defaultDate }: CreateModalProps
           <TimeSelect
             label="Time"
             value={form.reservation_time}
+            selectedDate={form.reservation_date}
+            disallowPast
             onChange={(v) => set({ reservation_time: v })}
           />
           <Input
@@ -439,7 +538,7 @@ function CreateReservationModal({ open, onClose, defaultDate }: CreateModalProps
           type="tel"
           value={form.phone_number ?? ''}
           onChange={(e) => set({ phone_number: e.target.value })}
-          hint="Required for parties of 4+"
+          hint="Required for parties of 4+. Use 1234567890 or 123-456-7890."
         />
 
         <Input
@@ -457,8 +556,9 @@ function CreateReservationModal({ open, onClose, defaultDate }: CreateModalProps
               type="button"
               variant="outline"
               size="sm"
-              onClick={() => searchMutation.mutate()}
+              onClick={handleFindAvailable}
               loading={searchMutation.isPending}
+              disabled={selectedSlotIsPast}
             >
               <Search size={14} />
               Find Available
@@ -467,6 +567,9 @@ function CreateReservationModal({ open, onClose, defaultDate }: CreateModalProps
 
           {searchedAvail && availableOptions.length === 0 && (
             <Alert variant="warning">No tables available for this time slot</Alert>
+          )}
+          {selectedSlotIsPast && (
+            <Alert variant="warning">Choose a future date and time before finding tables</Alert>
           )}
 
           {availableOptions.length > 0 && (
@@ -522,7 +625,7 @@ function CreateReservationModal({ open, onClose, defaultDate }: CreateModalProps
           <Button type="button" variant="outline" onClick={onClose}>
             Cancel
           </Button>
-          <Button type="submit" loading={createMutation.isPending}>
+          <Button type="submit" loading={createMutation.isPending} disabled={selectedSlotIsPast}>
             Create Reservation
           </Button>
         </div>
@@ -543,7 +646,7 @@ function EditReservationModal({
   const qc = useQueryClient();
   const [form, setForm] = useState({
     guest_name: reservation.guest_name,
-    party_size: reservation.party_size,
+    party_size: String(reservation.party_size),
     phone_number: reservation.phone_number ?? '',
     notes: reservation.notes ?? '',
     reservation_date: reservation.reservation_date,
@@ -568,11 +671,11 @@ function EditReservationModal({
   };
 
   const searchMutation = useMutation({
-    mutationFn: () =>
+    mutationFn: (partySize: number) =>
       reservationsApi.getAvailable({
         reservation_date: form.reservation_date,
         reservation_time: form.reservation_time,
-        party_size: form.party_size,
+        party_size: partySize,
         duration_minutes: form.duration_minutes,
         exclude_reservation_id: reservation.id,
       }),
@@ -585,11 +688,12 @@ function EditReservationModal({
   });
 
   const mutation = useMutation({
-    mutationFn: () =>
+    mutationFn: (partySize: number) =>
       reservationsApi.update(reservation.id, {
         ...form,
-        phone_number: form.phone_number || null,
-        notes: form.notes || null,
+        party_size: partySize,
+        phone_number: form.phone_number.trim() || null,
+        notes: form.notes.trim() || null,
         ...(selectedOption ? { table_ids: selectedOption.table_ids } : {}),
       }),
     onSuccess: () => {
@@ -614,16 +718,36 @@ function EditReservationModal({
       ? `Table ${reservation.tables[0].table_number}`
       : `Tables ${reservation.tables.map((t) => t.table_number).join(' + ')}`;
 
+  const handleFindAvailable = () => {
+    setError('');
+    const partySize = parsePartySize(form.party_size);
+    if (partySize === null) {
+      setError('Party size must be at least 1');
+      return;
+    }
+    if (isPastReservationSlot(form.reservation_date, form.reservation_time)) {
+      setError('Reservations must be for a future date and time');
+      return;
+    }
+    searchMutation.mutate(partySize);
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    const partySize = parsePartySize(form.party_size);
+    const validationError = validatePartyAndPhone(partySize, form.phone_number);
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
+    if (partySize === null) return;
+    mutation.mutate(partySize);
+  };
+
   return (
     <Modal open onClose={onClose} title="Edit Reservation" size="lg">
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          setError('');
-          mutation.mutate();
-        }}
-        className="flex flex-col gap-4"
-      >
+      <form onSubmit={handleSubmit} className="flex flex-col gap-4">
         {error && <Alert variant="error">{error}</Alert>}
 
         <div className="grid grid-cols-2 gap-4">
@@ -638,7 +762,7 @@ function EditReservationModal({
             type="number"
             min="1"
             value={form.party_size}
-            onChange={(e) => set({ party_size: parseInt(e.target.value) || 1 }, true)}
+            onChange={(e) => set({ party_size: e.target.value }, true)}
           />
         </div>
 
@@ -669,6 +793,7 @@ function EditReservationModal({
           type="tel"
           value={form.phone_number}
           onChange={(e) => set({ phone_number: e.target.value })}
+          hint="Required for parties of 4+. Use 1234567890 or 123-456-7890."
         />
 
         <Input
@@ -694,7 +819,7 @@ function EditReservationModal({
               type="button"
               variant="outline"
               size="sm"
-              onClick={() => searchMutation.mutate()}
+              onClick={handleFindAvailable}
               loading={searchMutation.isPending}
             >
               <Search size={14} />

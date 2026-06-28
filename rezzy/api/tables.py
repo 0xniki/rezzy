@@ -2,6 +2,8 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from rezzy.core.database import get_db
+from rezzy.core.security import get_current_admin
+from rezzy.models.user import User
 from rezzy.schemas import (
     TableCreate,
     TableUpdate,
@@ -29,26 +31,41 @@ def get_table(table_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("", response_model=TableResponse, status_code=201)
-def create_table(table: TableCreate, db: Session = Depends(get_db)):
+def create_table(
+    table: TableCreate,
+    db: Session = Depends(get_db),
+    _admin: User = Depends(get_current_admin),
+):
     """Create a new table"""
     return TableService.create_table(db, table)
 
 
 @router.patch("/{table_id}", response_model=TableResponse)
-def update_table(table_id: int, table: TableUpdate, db: Session = Depends(get_db)):
+def update_table(
+    table_id: int,
+    table: TableUpdate,
+    db: Session = Depends(get_db),
+    _admin: User = Depends(get_current_admin),
+):
     """Update a table"""
     return TableService.update_table(db, table_id, table)
 
 
 @router.delete("/{table_id}", status_code=204)
-def delete_table(table_id: int, db: Session = Depends(get_db)):
+def delete_table(
+    table_id: int,
+    db: Session = Depends(get_db),
+    _admin: User = Depends(get_current_admin),
+):
     """Delete a table"""
     TableService.delete_table(db, table_id)
 
 
 @router.post("/rearrange-chairs", response_model=list[TableResponse])
 def rearrange_chairs(
-    rearrangements: list[ChairRearrangement], db: Session = Depends(get_db)
+    rearrangements: list[ChairRearrangement],
+    db: Session = Depends(get_db),
+    _admin: User = Depends(get_current_admin),
 ):
     """Rearrange chairs across multiple tables."""
     return TableService.rearrange_chairs(db, rearrangements)

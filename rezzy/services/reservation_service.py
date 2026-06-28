@@ -13,6 +13,18 @@ from rezzy.services.restaurant_service import TableService
 
 class ReservationService:
     @staticmethod
+    def _check_reservation_starts_in_future(
+        reservation_date: date,
+        reservation_time: time,
+    ) -> None:
+        reservation_start = datetime.combine(reservation_date, reservation_time)
+        if reservation_start <= datetime.now():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Reservations must be for a future date and time",
+            )
+
+    @staticmethod
     def get_reservations(
         db: Session,
         start_date: date | None = None,
@@ -101,6 +113,10 @@ class ReservationService:
         reservation: ReservationCreate,
         created_by: User,
     ) -> Reservation:
+        ReservationService._check_reservation_starts_in_future(
+            reservation.reservation_date, reservation.reservation_time
+        )
+
         # Validate operating hours
         is_valid, error = HoursValidationService.is_time_within_hours(
             db, reservation.reservation_date, reservation.reservation_time,
@@ -194,6 +210,9 @@ class ReservationService:
             or "reservation_time" in update_data
             or "duration_minutes" in update_data
         ):
+            if "reservation_date" in update_data or "reservation_time" in update_data:
+                ReservationService._check_reservation_starts_in_future(new_date, new_time)
+
             is_valid, error = HoursValidationService.is_time_within_hours(
                 db, new_date, new_time, new_duration
             )
@@ -257,6 +276,10 @@ class ReservationService:
         Returns individual tables that fit, plus combinations of tables
         that together can seat the party when no single table can.
         """
+        ReservationService._check_reservation_starts_in_future(
+            reservation_date, reservation_time
+        )
+
         is_valid, error = HoursValidationService.is_time_within_hours(
             db, reservation_date, reservation_time, duration_minutes
         )

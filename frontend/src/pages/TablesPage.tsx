@@ -10,9 +10,12 @@ import Alert from '../components/ui/Alert';
 import Toggle from '../components/ui/Toggle';
 import { Armchair, Plus, Trash2, Edit2 } from 'lucide-react';
 import type { Table, TableCreate, TableUpdate } from '../types';
+import { useAuth } from '../context/useAuth';
 
 export default function TablesPage() {
   const qc = useQueryClient();
+  const { role } = useAuth();
+  const isAdmin = role === 'admin';
   const [showCreate, setShowCreate] = useState(false);
   const [editTable, setEditTable] = useState<Table | null>(null);
   const [adjustTable, setAdjustTable] = useState<Table | null>(null);
@@ -38,10 +41,12 @@ export default function TablesPage() {
           <h1 className="text-2xl font-bold text-gray-900">Tables</h1>
           <p className="text-gray-500 text-sm mt-0.5">Manage seating layout</p>
         </div>
-        <Button onClick={() => setShowCreate(true)}>
-          <Plus size={16} />
-          Add Table
-        </Button>
+        {isAdmin && (
+          <Button onClick={() => setShowCreate(true)}>
+            <Plus size={16} />
+            Add Table
+          </Button>
+        )}
       </div>
 
       {/* Tables grid */}
@@ -54,22 +59,24 @@ export default function TablesPage() {
                   <span className="font-bold text-lg text-gray-900">{table.table_number}</span>
                   {!table.is_active && <Badge color="gray">Inactive</Badge>}
                 </div>
-                <div className="flex gap-1">
-                  <Button variant="ghost" size="sm" onClick={() => setAdjustTable(table)}>
-                    <Armchair size={14} />
-                  </Button>
-                  <Button variant="ghost" size="sm" onClick={() => setEditTable(table)}>
-                    <Edit2 size={14} />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => deleteMutation.mutate(table.id)}
-                    className="text-red-400 hover:text-red-600 hover:bg-red-50"
-                  >
-                    <Trash2 size={14} />
-                  </Button>
-                </div>
+                {isAdmin && (
+                  <div className="flex gap-1">
+                    <Button variant="ghost" size="sm" onClick={() => setAdjustTable(table)}>
+                      <Armchair size={14} />
+                    </Button>
+                    <Button variant="ghost" size="sm" onClick={() => setEditTable(table)}>
+                      <Edit2 size={14} />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => deleteMutation.mutate(table.id)}
+                      className="text-red-400 hover:text-red-600 hover:bg-red-50"
+                    >
+                      <Trash2 size={14} />
+                    </Button>
+                  </div>
+                )}
               </div>
               <div className="grid grid-cols-3 gap-2 text-center">
                 <div className="bg-gray-50 rounded-lg py-2">
@@ -95,11 +102,13 @@ export default function TablesPage() {
         )}
       </div>
 
-      <CreateTableModal open={showCreate} onClose={() => setShowCreate(false)} />
-      {editTable && (
+      {isAdmin && (
+        <CreateTableModal open={showCreate} onClose={() => setShowCreate(false)} />
+      )}
+      {isAdmin && editTable && (
         <EditTableModal table={editTable} onClose={() => setEditTable(null)} />
       )}
-      {adjustTable && (
+      {isAdmin && adjustTable && (
         <AdjustChairsModal table={adjustTable} onClose={() => setAdjustTable(null)} />
       )}
     </div>

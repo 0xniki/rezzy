@@ -1,5 +1,28 @@
 import pytest
-from datetime import date
+from datetime import date, datetime, timezone
+
+from rezzy.core.security import get_current_user, hash_password
+from rezzy.main import app
+from rezzy.models.user import User
+
+
+def use_non_admin_user(db):
+    user = User(
+        username="test-user",
+        hashed_password=hash_password("password123"),
+        role="user",
+        is_active=True,
+        approved_at=datetime.now(timezone.utc),
+    )
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+
+    def override_get_current_user():
+        return user
+
+    app.dependency_overrides[get_current_user] = override_get_current_user
+    return user
 
 
 class TestOperatingHours:
@@ -102,6 +125,31 @@ class TestOperatingHours:
         response = client.post("/hours/operating/bulk", json=hours_data)
         assert response.status_code == 201
         assert len(response.json()) == 5
+
+    def test_non_admin_can_view_but_not_modify_operating_hours(
+        self, client, db, operating_hours
+    ):
+        use_non_admin_user(db)
+
+        response = client.get("/hours/operating")
+        assert response.status_code == 200
+        assert len(response.json()) == 7
+
+        response = client.post(
+            "/hours/operating",
+            json={
+                "day_of_week": 1,
+                "open_time": "09:00:00",
+                "close_time": "21:00:00",
+            },
+        )
+        assert response.status_code == 403
+
+        response = client.patch(
+            "/hours/operating/0",
+            json={"open_time": "08:00:00"},
+        )
+        assert response.status_code == 403
 
 
 class TestSpecialHours:
@@ -209,3 +257,29 @@ class TestSpecialHours:
         # Verify deleted
         response = client.get("/hours/special/2026-05-01")
         assert response.json() is None
+
+    def test_non_admin_can_view_but_not_modify_special_hours(self, client, db):
+        client.post(
+            "/hours/special",
+            json={"date": "2026-12-24", "is_closed": True, "reason": "Holiday"},
+        )
+        use_non_admin_user(db)
+
+        response = client.get("/hours/special")
+        assert response.status_code == 200
+        assert len(response.json()) == 1
+
+        response = client.post(
+            "/hours/special",
+            json={"date": "2026-12-25", "is_closed": True},
+        )
+        assert response.status_code == 403
+
+        response = client.patch(
+            "/hours/special/2026-12-24",
+            json={"reason": "Updated"},
+        )
+        assert response.status_code == 403
+
+        response = client.delete("/hours/special/2026-12-24")
+        assert response.status_code == 403

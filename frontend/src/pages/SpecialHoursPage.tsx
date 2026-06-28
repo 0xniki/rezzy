@@ -11,9 +11,12 @@ import Toggle from '../components/ui/Toggle';
 import { Plus, Trash2, CalendarClock } from 'lucide-react';
 import { formatDate, formatTime, todayString } from '../lib/utils';
 import type { SpecialHoursCreate } from '../types';
+import { useAuth } from '../context/useAuth';
 
 export default function SpecialHoursPage() {
   const qc = useQueryClient();
+  const { role } = useAuth();
+  const isAdmin = role === 'admin';
   const [showCreate, setShowCreate] = useState(false);
   const [error, setError] = useState('');
 
@@ -42,10 +45,12 @@ export default function SpecialHoursPage() {
             Override regular hours for holidays or special events
           </p>
         </div>
-        <Button onClick={() => setShowCreate(true)}>
-          <Plus size={16} />
-          Add Special Hours
-        </Button>
+        {isAdmin && (
+          <Button onClick={() => setShowCreate(true)}>
+            <Plus size={16} />
+            Add Special Hours
+          </Button>
+        )}
       </div>
 
       {error && <Alert variant="error" className="mb-4">{error}</Alert>}
@@ -84,25 +89,29 @@ export default function SpecialHoursPage() {
                     <span className="text-sm text-gray-400 ml-2 italic">"{sh.reason}"</span>
                   )}
                 </div>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => deleteMutation.mutate(sh.date)}
-                  loading={deleteMutation.isPending}
-                  className="text-red-400 hover:text-red-600 hover:bg-red-50"
-                >
-                  <Trash2 size={14} />
-                </Button>
+                {isAdmin && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => deleteMutation.mutate(sh.date)}
+                    loading={deleteMutation.isPending}
+                    className="text-red-400 hover:text-red-600 hover:bg-red-50"
+                  >
+                    <Trash2 size={14} />
+                  </Button>
+                )}
               </div>
             ))}
           </div>
         )}
       </Card>
 
-      <CreateSpecialHoursModal
-        open={showCreate}
-        onClose={() => setShowCreate(false)}
-      />
+      {isAdmin && (
+        <CreateSpecialHoursModal
+          open={showCreate}
+          onClose={() => setShowCreate(false)}
+        />
+      )}
     </div>
   );
 }

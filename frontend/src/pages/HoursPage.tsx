@@ -9,9 +9,12 @@ import Alert from '../components/ui/Alert';
 import { Clock, Save } from 'lucide-react';
 import { DAY_NAMES } from '../types';
 import { formatTime } from '../lib/utils';
+import { useAuth } from '../context/useAuth';
 
 export default function HoursPage() {
   const qc = useQueryClient();
+  const { role } = useAuth();
+  const isAdmin = role === 'admin';
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [error, setError] = useState('');
 
@@ -81,14 +84,16 @@ export default function HoursPage() {
           <h1 className="text-2xl font-bold text-gray-900">Operating Hours</h1>
           <p className="text-gray-500 text-sm mt-0.5">Set your regular weekly schedule</p>
         </div>
-        <Button
-          onClick={() => saveMutation.mutate()}
-          loading={saveMutation.isPending}
-          disabled={!hasEdits}
-        >
-          <Save size={16} />
-          Save Changes
-        </Button>
+        {isAdmin && (
+          <Button
+            onClick={() => saveMutation.mutate()}
+            loading={saveMutation.isPending}
+            disabled={!hasEdits}
+          >
+            <Save size={16} />
+            Save Changes
+          </Button>
+        )}
       </div>
 
       {saveSuccess && <Alert variant="success" className="mb-4">Hours saved successfully</Alert>}
@@ -120,6 +125,7 @@ export default function HoursPage() {
                 </div>
                 <Toggle
                   checked={!d.is_closed}
+                  disabled={!isAdmin}
                   onChange={(open) => updateDay(i, { is_closed: !open })}
                 />
                 {!d.is_closed ? (
@@ -127,6 +133,7 @@ export default function HoursPage() {
                     <input
                       type="time"
                       value={d.open_time}
+                      disabled={!isAdmin}
                       onChange={(e) => updateDay(i, { open_time: e.target.value })}
                       className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                     />
@@ -134,6 +141,7 @@ export default function HoursPage() {
                     <input
                       type="time"
                       value={d.close_time}
+                      disabled={!isAdmin}
                       onChange={(e) => updateDay(i, { close_time: e.target.value })}
                       className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                     />

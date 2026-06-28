@@ -41,14 +41,48 @@ class TestReservations:
             json={
                 "guest_name": "Jane Smith",
                 "party_size": 4,
-                "phone_number": "555-1234",
+                "phone_number": "123-456-7890",
                 "reservation_date": reservation_date.isoformat(),
                 "reservation_time": "19:00:00",
                 "table_ids": [full_setup["table"]["id"]],
             },
         )
         assert response.status_code == 201
-        assert response.json()["phone_number"] == "555-1234"
+        assert response.json()["phone_number"] == "123-456-7890"
+
+    def test_create_reservation_with_plain_10_digit_phone(self, client, full_setup):
+        reservation_date = get_next_weekday(date.today(), 0)
+
+        response = client.post(
+            "/reservations",
+            json={
+                "guest_name": "Digits Guest",
+                "party_size": 4,
+                "phone_number": "1234567890",
+                "reservation_date": reservation_date.isoformat(),
+                "reservation_time": "19:00:00",
+                "table_ids": [full_setup["table"]["id"]],
+            },
+        )
+        assert response.status_code == 201
+        assert response.json()["phone_number"] == "1234567890"
+
+    def test_create_reservation_invalid_phone_fails(self, client, full_setup):
+        reservation_date = get_next_weekday(date.today(), 0)
+
+        response = client.post(
+            "/reservations",
+            json={
+                "guest_name": "Bad Phone",
+                "party_size": 4,
+                "phone_number": "555-1234",
+                "reservation_date": reservation_date.isoformat(),
+                "reservation_time": "19:00:00",
+                "table_ids": [full_setup["table"]["id"]],
+            },
+        )
+        assert response.status_code == 422
+        assert "123-456-7890" in response.text
 
     def test_create_reservation_large_party_no_phone_fails(self, client, full_setup):
         reservation_date = get_next_weekday(date.today(), 0)
@@ -106,7 +140,7 @@ class TestReservations:
             json={
                 "guest_name": "Too Big",
                 "party_size": 10,  # Table only has 4 chairs
-                "phone_number": "555-0000",
+                "phone_number": "123-456-7890",
                 "reservation_date": reservation_date.isoformat(),
                 "reservation_time": "18:00:00",
                 "table_ids": [full_setup["table"]["id"]],
@@ -146,6 +180,34 @@ class TestReservations:
         )
         assert response.status_code == 400
         assert "30 minutes" in response.json()["detail"]
+
+    def test_create_reservation_for_previous_day_fails(self, client, full_setup):
+        response = client.post(
+            "/reservations",
+            json={
+                "guest_name": "Past Guest",
+                "party_size": 2,
+                "reservation_date": (date.today() - timedelta(days=1)).isoformat(),
+                "reservation_time": "18:00:00",
+                "table_ids": [full_setup["table"]["id"]],
+            },
+        )
+        assert response.status_code == 400
+        assert "future" in response.json()["detail"].lower()
+
+    def test_create_reservation_for_passed_time_today_fails(self, client, full_setup):
+        response = client.post(
+            "/reservations",
+            json={
+                "guest_name": "Too Late",
+                "party_size": 2,
+                "reservation_date": date.today().isoformat(),
+                "reservation_time": "00:00:00",
+                "table_ids": [full_setup["table"]["id"]],
+            },
+        )
+        assert response.status_code == 400
+        assert "future" in response.json()["detail"].lower()
 
     def test_create_reservation_on_closed_day_fails(self, client, full_setup):
         # Create a special closed day
@@ -307,7 +369,7 @@ class TestReservations:
 
         response = client.patch(
             f"/reservations/{created['id']}",
-            json={"party_size": 10, "phone_number": "555-0000"},  # Exceeds table capacity
+            json={"party_size": 10, "phone_number": "123-456-7890"},  # Exceeds table capacity
         )
         assert response.status_code == 400
         assert "capacity" in response.json()["detail"].lower()
@@ -337,7 +399,7 @@ class TestReservations:
         # Should work with phone
         response = client.patch(
             f"/reservations/{created['id']}",
-            json={"party_size": 4, "phone_number": "555-9999"},
+            json={"party_size": 4, "phone_number": "123-456-7890"},
         )
         assert response.status_code == 200
 
@@ -462,6 +524,29 @@ class TestReservations:
         assert response.status_code == 400
         assert "closed" in response.json()["detail"].lower()
 
+    def test_update_reservation_to_previous_day_fails(self, client, full_setup):
+        reservation_date = get_next_weekday(date.today(), 0)
+
+        created = client.post(
+            "/reservations",
+            json={
+                "guest_name": "Time Traveler",
+                "party_size": 2,
+                "reservation_date": reservation_date.isoformat(),
+                "reservation_time": "18:00:00",
+                "table_ids": [full_setup["table"]["id"]],
+            },
+        ).json()
+
+        response = client.patch(
+            f"/reservations/{created['id']}",
+            json={
+                "reservation_date": (date.today() - timedelta(days=1)).isoformat()
+            },
+        )
+        assert response.status_code == 400
+        assert "future" in response.json()["detail"].lower()
+
     def test_cancel_reservation(self, client, full_setup):
         reservation_date = get_next_weekday(date.today(), 0)
 
@@ -584,3 +669,15 @@ class TestAvailableTables:
         )
         assert response.status_code == 200
         assert len(response.json()) == 0
+
+    def test_get_available_tables_for_passed_time_today_fails(self, client, full_setup):
+        response = client.get(
+            "/reservations/available",
+            params={
+                "reservation_date": date.today().isoformat(),
+                "reservation_time": "00:00:00",
+                "party_size": 2,
+            },
+        )
+        assert response.status_code == 400
+        assert "future" in response.json()["detail"].lower()

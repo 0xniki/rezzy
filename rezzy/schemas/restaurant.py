@@ -1,6 +1,22 @@
+import re
 from datetime import date, time, datetime
 from typing import Optional
 from pydantic import BaseModel, Field, field_validator, model_validator
+
+
+PHONE_PATTERN = re.compile(r"^(\d{10}|\d{3}-\d{3}-\d{4})$")
+
+
+def validate_phone_number(value: str | None) -> str | None:
+    if value is None:
+        return None
+
+    phone = value.strip()
+    if not phone:
+        return None
+    if not PHONE_PATTERN.fullmatch(phone):
+        raise ValueError("phone_number must be 10 digits or in 123-456-7890 format")
+    return phone
 
 
 class UserCreate(BaseModel):
@@ -156,6 +172,11 @@ class ReservationBase(BaseModel):
     reservation_time: time
     duration_minutes: int = Field(default=90, gt=0)
 
+    @field_validator("phone_number", mode="before")
+    @classmethod
+    def validate_phone_format(cls, v):
+        return validate_phone_number(v)
+
     @model_validator(mode="after")
     def validate_phone_for_large_party(self):
         if self.party_size >= 4 and not self.phone_number:
@@ -177,6 +198,11 @@ class ReservationUpdate(BaseModel):
     duration_minutes: Optional[int] = Field(None, gt=0)
     table_ids: Optional[list[int]] = Field(None, min_length=1)
     status: Optional[str] = None
+
+    @field_validator("phone_number", mode="before")
+    @classmethod
+    def validate_phone_format(cls, v):
+        return validate_phone_number(v)
 
     @field_validator("status")
     @classmethod

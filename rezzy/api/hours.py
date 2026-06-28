@@ -3,6 +3,8 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from rezzy.core.database import get_db
+from rezzy.core.security import get_current_admin
+from rezzy.models.user import User
 from rezzy.schemas import (
     OperatingHoursCreate,
     OperatingHoursUpdate,
@@ -30,7 +32,11 @@ def get_operating_hours_for_day(day_of_week: int, db: Session = Depends(get_db))
 
 
 @router.post("/operating", response_model=OperatingHoursResponse, status_code=201)
-def create_operating_hours(hours: OperatingHoursCreate, db: Session = Depends(get_db)):
+def create_operating_hours(
+    hours: OperatingHoursCreate,
+    db: Session = Depends(get_db),
+    _admin: User = Depends(get_current_admin),
+):
     """Create operating hours for a day of the week"""
     return OperatingHoursService.create_hours(db, hours)
 
@@ -39,7 +45,9 @@ def create_operating_hours(hours: OperatingHoursCreate, db: Session = Depends(ge
     "/operating/bulk", response_model=list[OperatingHoursResponse], status_code=201
 )
 def bulk_create_operating_hours(
-    hours_list: list[OperatingHoursCreate], db: Session = Depends(get_db)
+    hours_list: list[OperatingHoursCreate],
+    db: Session = Depends(get_db),
+    _admin: User = Depends(get_current_admin),
 ):
     """Create operating hours for multiple days at once"""
     return OperatingHoursService.bulk_create_hours(db, hours_list)
@@ -47,7 +55,10 @@ def bulk_create_operating_hours(
 
 @router.patch("/operating/{day_of_week}", response_model=OperatingHoursResponse)
 def update_operating_hours(
-    day_of_week: int, hours: OperatingHoursUpdate, db: Session = Depends(get_db)
+    day_of_week: int,
+    hours: OperatingHoursUpdate,
+    db: Session = Depends(get_db),
+    _admin: User = Depends(get_current_admin),
 ):
     """Update operating hours for a specific day"""
     return OperatingHoursService.update_hours(db, day_of_week, hours)
@@ -71,20 +82,31 @@ def get_special_hours_for_date(target_date: date, db: Session = Depends(get_db))
 
 
 @router.post("/special", response_model=SpecialHoursResponse, status_code=201)
-def create_special_hours(hours: SpecialHoursCreate, db: Session = Depends(get_db)):
+def create_special_hours(
+    hours: SpecialHoursCreate,
+    db: Session = Depends(get_db),
+    _admin: User = Depends(get_current_admin),
+):
     """Create special hours for a specific date"""
     return SpecialHoursService.create_special_hours(db, hours)
 
 
 @router.patch("/special/{target_date}", response_model=SpecialHoursResponse)
 def update_special_hours(
-    target_date: date, hours: SpecialHoursUpdate, db: Session = Depends(get_db)
+    target_date: date,
+    hours: SpecialHoursUpdate,
+    db: Session = Depends(get_db),
+    _admin: User = Depends(get_current_admin),
 ):
     """Update special hours for a specific date"""
     return SpecialHoursService.update_special_hours(db, target_date, hours)
 
 
 @router.delete("/special/{target_date}", status_code=204)
-def delete_special_hours(target_date: date, db: Session = Depends(get_db)):
+def delete_special_hours(
+    target_date: date,
+    db: Session = Depends(get_db),
+    _admin: User = Depends(get_current_admin),
+):
     """Delete special hours for a specific date"""
     SpecialHoursService.delete_special_hours(db, target_date)

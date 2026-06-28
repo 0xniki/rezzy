@@ -1,4 +1,28 @@
 import pytest
+from datetime import datetime, timezone
+
+from rezzy.core.security import get_current_user, hash_password
+from rezzy.main import app
+from rezzy.models.user import User
+
+
+def use_non_admin_user(db):
+    user = User(
+        username="test-user",
+        hashed_password=hash_password("password123"),
+        role="user",
+        is_active=True,
+        approved_at=datetime.now(timezone.utc),
+    )
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+
+    def override_get_current_user():
+        return user
+
+    app.dependency_overrides[get_current_user] = override_get_current_user
+    return user
 
 
 class TestTables:
@@ -125,6 +149,30 @@ class TestTables:
         response = client.get(f"/tables/{sample_table['id']}")
         assert response.status_code == 404
 
+    def test_non_admin_can_view_but_not_modify_tables(
+        self, client, db, sample_table
+    ):
+        use_non_admin_user(db)
+
+        response = client.get("/tables")
+        assert response.status_code == 200
+        assert len(response.json()) == 1
+
+        response = client.post(
+            "/tables",
+            json={"table_number": "T2", "default_chairs": 2, "max_chairs": 4},
+        )
+        assert response.status_code == 403
+
+        response = client.patch(
+            f"/tables/{sample_table['id']}",
+            json={"table_number": "Updated"},
+        )
+        assert response.status_code == 403
+
+        response = client.delete(f"/tables/{sample_table['id']}")
+        assert response.status_code == 403
+
 
 class TestChairRearrangement:
     def test_rearrange_chairs(self, client, sample_tables):
@@ -196,3 +244,12 @@ class TestChairRearrangement:
         )
         assert response.status_code == 400
         assert "Not enough extra chairs" in response.json()["detail"]
+
+    def test_non_admin_cannot_rearrange_chairs(self, client, db, sample_table):
+        use_non_admin_user(db)
+
+        response = client.post(
+            "/tables/rearrange-chairs",
+            json=[{"table_id": sample_table["id"], "new_chair_count": 6}],
+        )
+        assert response.status_code == 403
