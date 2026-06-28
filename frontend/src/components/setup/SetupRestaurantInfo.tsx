@@ -19,7 +19,7 @@ export default function SetupRestaurantInfo({ onNext }: Props) {
   });
 
   const formKey = existingConfig
-    ? `${existingConfig.id}-${existingConfig.name}-${existingConfig.total_extra_chairs}`
+    ? `${existingConfig.id}-${existingConfig.name}-${existingConfig.total_extra_chairs}-${existingConfig.weather_location ?? ''}`
     : 'new';
 
   return (
@@ -39,18 +39,29 @@ function SetupRestaurantInfoForm({
   const [extraChairs, setExtraChairs] = useState(
     String(existingConfig?.total_extra_chairs ?? 0)
   );
+  const [weatherLocation, setWeatherLocation] = useState(
+    existingConfig?.weather_location ?? ''
+  );
   const [error, setError] = useState('');
 
   const createMutation = useMutation({
     mutationFn: () =>
-      configApi.create({ name: name.trim(), total_extra_chairs: parseInt(extraChairs) || 0 }),
+      configApi.create({
+        name: name.trim(),
+        total_extra_chairs: parseInt(extraChairs) || 0,
+        weather_location: weatherLocation.trim() || null,
+      }),
     onSuccess: onNext,
     onError: (e: Error) => setError(e.message),
   });
 
   const updateMutation = useMutation({
     mutationFn: () =>
-      configApi.update({ name: name.trim(), total_extra_chairs: parseInt(extraChairs) || 0 }),
+      configApi.update({
+        name: name.trim(),
+        total_extra_chairs: parseInt(extraChairs) || 0,
+        weather_location: weatherLocation.trim() || null,
+      }),
     onSuccess: onNext,
     onError: (e: Error) => setError(e.message),
   });
@@ -102,6 +113,14 @@ function SetupRestaurantInfoForm({
           value={extraChairs}
           onChange={(e) => setExtraChairs(e.target.value)}
           hint="Unassigned chairs that can be moved to any table as needed"
+        />
+
+        <Input
+          label="Weather Location"
+          placeholder="e.g. Savannah, GA"
+          value={weatherLocation}
+          onChange={(e) => setWeatherLocation(e.target.value)}
+          hint="Used to show hourly weather beside nearby venue events"
         />
       </div>
 

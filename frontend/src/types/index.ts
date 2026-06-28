@@ -3,16 +3,48 @@ export interface RestaurantConfig {
   id: number;
   name: string;
   total_extra_chairs: number;
+  weather_location: string | null;
 }
 
 export interface RestaurantConfigCreate {
   name: string;
   total_extra_chairs?: number;
+  weather_location?: string | null;
 }
 
 export interface RestaurantConfigUpdate {
   name?: string;
   total_extra_chairs?: number;
+  weather_location?: string | null;
+}
+
+// Events and Weather
+export interface WeatherHour {
+  time: string;
+  temperature_f: number | null;
+  precipitation_probability: number | null;
+  wind_speed_mph: number | null;
+  condition: string | null;
+}
+
+export interface VenueEvent {
+  source: string;
+  name: string;
+  starts_at: string;
+  ends_at: string | null;
+  venue: string | null;
+  url: string | null;
+}
+
+export interface DailyEventsContext {
+  date: string;
+  window_start: string | null;
+  window_end: string | null;
+  is_closed: boolean;
+  weather_location: string | null;
+  weather: WeatherHour[];
+  events: VenueEvent[];
+  errors: string[];
 }
 
 // Users

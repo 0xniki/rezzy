@@ -7,6 +7,7 @@ from rezzy.api import (
     tables_router,
     hours_router,
     reservations_router,
+    events_router,
 )
 from rezzy.core.security import get_current_user
 
@@ -33,6 +34,7 @@ app.include_router(config_router, dependencies=_auth)
 app.include_router(tables_router, dependencies=_auth)
 app.include_router(hours_router, dependencies=_auth)
 app.include_router(reservations_router, dependencies=_auth)
+app.include_router(events_router, dependencies=_auth)
 
 
 @app.get("/health")

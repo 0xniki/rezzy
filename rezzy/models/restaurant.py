@@ -10,6 +10,7 @@ class RestaurantConfig(Base):
     id = Column(Integer, primary_key=True, default=1)
     name = Column(String(255), nullable=False)
     total_extra_chairs = Column(Integer, nullable=False, default=0)
+    weather_location = Column(String(255), nullable=True)
 
     __table_args__ = (
         CheckConstraint("id = 1", name="single_row_constraint"),

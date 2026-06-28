@@ -39,6 +39,15 @@ class UserResponse(BaseModel):
 class RestaurantConfigBase(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)
     total_extra_chairs: int = Field(default=0, ge=0)
+    weather_location: Optional[str] = Field(None, max_length=255)
+
+    @field_validator("weather_location", mode="before")
+    @classmethod
+    def normalize_weather_location(cls, value):
+        if value is None:
+            return None
+        location = str(value).strip()
+        return location or None
 
 
 class RestaurantConfigCreate(RestaurantConfigBase):
@@ -48,12 +57,49 @@ class RestaurantConfigCreate(RestaurantConfigBase):
 class RestaurantConfigUpdate(BaseModel):
     name: Optional[str] = Field(None, min_length=1, max_length=255)
     total_extra_chairs: Optional[int] = Field(None, ge=0)
+    weather_location: Optional[str] = Field(None, max_length=255)
+
+    @field_validator("weather_location", mode="before")
+    @classmethod
+    def normalize_weather_location(cls, value):
+        if value is None:
+            return None
+        location = str(value).strip()
+        return location or None
 
 
 class RestaurantConfigResponse(RestaurantConfigBase):
     id: int
 
     model_config = {"from_attributes": True}
+
+
+class WeatherHour(BaseModel):
+    time: datetime
+    temperature_f: float | None = None
+    precipitation_probability: int | None = None
+    wind_speed_mph: float | None = None
+    condition: str | None = None
+
+
+class VenueEvent(BaseModel):
+    source: str
+    name: str
+    starts_at: datetime
+    ends_at: datetime | None = None
+    venue: str | None = None
+    url: str | None = None
+
+
+class DailyEventsContext(BaseModel):
+    date: date
+    window_start: datetime | None
+    window_end: datetime | None
+    is_closed: bool
+    weather_location: str | None
+    weather: list[WeatherHour] = []
+    events: list[VenueEvent] = []
+    errors: list[str] = []
 
 
 # Table Schemas

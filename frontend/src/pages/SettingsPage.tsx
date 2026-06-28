@@ -15,7 +15,7 @@ export default function SettingsPage() {
   });
 
   const formKey = config
-    ? `${config.id}-${config.name}-${config.total_extra_chairs}`
+    ? `${config.id}-${config.name}-${config.total_extra_chairs}-${config.weather_location ?? ''}`
     : 'empty';
 
   return <SettingsForm key={formKey} config={config} />;
@@ -26,6 +26,7 @@ function SettingsForm({ config }: { config?: RestaurantConfig }) {
   const [form, setForm] = useState({
     name: config?.name ?? '',
     total_extra_chairs: config?.total_extra_chairs ?? 0,
+    weather_location: config?.weather_location ?? '',
   });
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [error, setError] = useState('');
@@ -84,6 +85,13 @@ function SettingsForm({ config }: { config?: RestaurantConfig }) {
                 setForm((f) => ({ ...f, total_extra_chairs: parseInt(e.target.value) || 0 }))
               }
               hint="Unassigned chairs that can be moved to any table"
+            />
+            <Input
+              label="Weather Location"
+              placeholder="e.g. Savannah, GA"
+              value={form.weather_location}
+              onChange={(e) => setForm((f) => ({ ...f, weather_location: e.target.value }))}
+              hint="Used for hourly weather on the reservations events tab"
             />
             <div className="flex pt-2 sm:justify-end">
               <Button type="submit" loading={mutation.isPending} className="w-full sm:w-auto">

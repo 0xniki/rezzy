@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { reservationsApi } from '../api/reservations';
 import { operatingHoursApi, specialHoursApi } from '../api/hours';
+import { eventsApi } from '../api/events';
 import { Card, CardHeader, CardBody } from '../components/ui/Card';
 import Button from '../components/ui/Button';
 import Badge from '../components/ui/Badge';
@@ -9,7 +10,7 @@ import Modal from '../components/ui/Modal';
 import Input from '../components/ui/Input';
 import Select from '../components/ui/Select';
 import Alert from '../components/ui/Alert';
-import { Plus, Search, CalendarDays, Users, Phone, ChevronLeft, ChevronRight, Armchair, LayoutGrid, AlertCircle } from 'lucide-react';
+import { Plus, Search, CalendarDays, Users, Phone, ChevronLeft, ChevronRight, Armchair, LayoutGrid, AlertCircle, CloudSun, CalendarClock, MapPin, Clock, ExternalLink, CloudRain, Wind } from 'lucide-react';
 import { formatTime, formatDate, todayString } from '../lib/utils';
 import type {
   Reservation,
@@ -19,6 +20,7 @@ import type {
   AvailableOption,
   OperatingHours,
   SpecialHours,
+  DailyEventsContext,
 } from '../types';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -202,6 +204,7 @@ export default function ReservationsPage() {
   const qc = useQueryClient();
   const [selectedDate, setSelectedDate] = useState(todayString());
   const [weekStart, setWeekStart] = useState(() => getWeekStart(new Date()));
+  const [activeTab, setActiveTab] = useState<'reservations' | 'events'>('reservations');
   const [showCreate, setShowCreate] = useState(false);
   const [editRes, setEditRes] = useState<Reservation | null>(null);
 
@@ -337,94 +340,45 @@ export default function ReservationsPage() {
         </div>
       </Card>
 
-      {/* Day's reservations */}
-      <Card key={selectedDate} className="animate-rezzy-fade-slide">
-        <CardHeader>
-          <h2 className="font-semibold text-gray-900">
-            {formatDate(selectedDate)}
-          </h2>
-        </CardHeader>
-        <CardBody className="p-0">
-          {dayRes.length === 0 ? (
-            <div className="py-12 text-center text-gray-400">
-              <CalendarDays size={36} className="mx-auto mb-2 opacity-40" />
-              <p className="text-sm">No reservations for this day</p>
-            </div>
-          ) : (
-            <div className="divide-y divide-gray-100">
-              {dayRes.map((r) => {
-                const tableLabel =
-                  r.tables.length === 0
-                    ? 'No table'
-                    : r.tables.length === 1
-                    ? `Table ${r.tables[0].table_number}`
-                    : `Tables ${r.tables.map((t) => t.table_number).join(' + ')}`;
-                const soon = isUpcomingSoon(r, now);
+      <div className="mb-4 inline-flex rounded-lg border border-gray-200 bg-white p-1 shadow-sm">
+        <button
+          type="button"
+          onClick={() => setActiveTab('reservations')}
+          className={`flex min-h-9 items-center gap-2 rounded-md px-3 text-sm font-medium transition-colors ${
+            activeTab === 'reservations'
+              ? 'bg-blue-600 text-white'
+              : 'text-gray-600 hover:bg-gray-50'
+          }`}
+        >
+          <CalendarDays size={16} />
+          Reservations
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab('events')}
+          className={`flex min-h-9 items-center gap-2 rounded-md px-3 text-sm font-medium transition-colors ${
+            activeTab === 'events'
+              ? 'bg-blue-600 text-white'
+              : 'text-gray-600 hover:bg-gray-50'
+          }`}
+        >
+          <CloudSun size={16} />
+          Events
+        </button>
+      </div>
 
-                return (
-                  <div
-                    key={r.id}
-                    className={`flex flex-col gap-3 px-4 py-4 transition-colors sm:flex-row sm:items-center sm:gap-4 sm:px-6 ${
-                      soon ? 'bg-red-50 hover:bg-red-100' : 'hover:bg-gray-50'
-                    }`}
-                  >
-                    <div className="flex w-full items-start justify-between gap-3 sm:w-16 sm:shrink-0 sm:flex-col sm:items-center">
-                      <span className="text-sm font-bold text-gray-900">{formatTime(r.reservation_time)}</span>
-                      <span className="text-xs text-gray-400">{r.duration_minutes}m</span>
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="mb-0.5 flex flex-wrap items-center gap-2">
-                        {soon && (
-                          <span title="Starting within 1 hour — place reserve sign">
-                            <AlertCircle size={16} className="text-red-500 shrink-0 animate-pulse" />
-                          </span>
-                        )}
-                        <span className="font-medium text-gray-900">{r.guest_name}</span>
-                        <Badge color={STATUS_COLORS[r.status]}>{r.status}</Badge>
-                      </div>
-                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-500">
-                        <span className="flex items-center gap-1">
-                          <Users size={12} />
-                          {r.party_size} guests
-                        </span>
-                        <span className="flex items-center gap-1">
-                          <LayoutGrid size={12} />
-                          {tableLabel}
-                        </span>
-                        {r.phone_number && (
-                          <span className="flex items-center gap-1">
-                            <Phone size={12} />
-                            {r.phone_number}
-                          </span>
-                        )}
-                        {r.notes && (
-                          <span className="max-w-full truncate italic sm:max-w-xs">"{r.notes}"</span>
-                        )}
-                      </div>
-                    </div>
-                    <div className="flex w-full shrink-0 items-center gap-2 sm:w-auto">
-                      <Button variant="ghost" size="sm" onClick={() => setEditRes(r)}>
-                        Edit
-                      </Button>
-                      {r.status === 'confirmed' || r.status === 'seated' ? (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => cancelMutation.mutate(r.id)}
-                          loading={cancelMutation.isPending}
-                          className="text-red-500 hover:text-red-700 hover:bg-red-50"
-                        >
-                          Cancel
-                        </Button>
-                      ) : null}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </CardBody>
-      </Card>
+      {activeTab === 'reservations' ? (
+        <ReservationsDayCard
+          selectedDate={selectedDate}
+          dayRes={dayRes}
+          now={now}
+          onEdit={setEditRes}
+          onCancel={(id) => cancelMutation.mutate(id)}
+          cancelling={cancelMutation.isPending}
+        />
+      ) : (
+        <EventsDayCard selectedDate={selectedDate} />
+      )}
 
       {showCreate && (
         <CreateReservationModal
@@ -441,6 +395,265 @@ export default function ReservationsPage() {
       )}
     </div>
   );
+}
+
+function ReservationsDayCard({
+  selectedDate,
+  dayRes,
+  now,
+  onEdit,
+  onCancel,
+  cancelling,
+}: {
+  selectedDate: string;
+  dayRes: Reservation[];
+  now: Date;
+  onEdit: (reservation: Reservation) => void;
+  onCancel: (id: number) => void;
+  cancelling: boolean;
+}) {
+  return (
+    <Card key={selectedDate} className="animate-rezzy-fade-slide">
+      <CardHeader>
+        <h2 className="font-semibold text-gray-900">
+          {formatDate(selectedDate)}
+        </h2>
+      </CardHeader>
+      <CardBody className="p-0">
+        {dayRes.length === 0 ? (
+          <div className="py-12 text-center text-gray-400">
+            <CalendarDays size={36} className="mx-auto mb-2 opacity-40" />
+            <p className="text-sm">No reservations for this day</p>
+          </div>
+        ) : (
+          <div className="divide-y divide-gray-100">
+            {dayRes.map((r) => {
+              const tableLabel =
+                r.tables.length === 0
+                  ? 'No table'
+                  : r.tables.length === 1
+                  ? `Table ${r.tables[0].table_number}`
+                  : `Tables ${r.tables.map((t) => t.table_number).join(' + ')}`;
+              const soon = isUpcomingSoon(r, now);
+
+              return (
+                <div
+                  key={r.id}
+                  className={`flex flex-col gap-3 px-4 py-4 transition-colors sm:flex-row sm:items-center sm:gap-4 sm:px-6 ${
+                    soon ? 'bg-red-50 hover:bg-red-100' : 'hover:bg-gray-50'
+                  }`}
+                >
+                  <div className="flex w-full items-start justify-between gap-3 sm:w-16 sm:shrink-0 sm:flex-col sm:items-center">
+                    <span className="text-sm font-bold text-gray-900">{formatTime(r.reservation_time)}</span>
+                    <span className="text-xs text-gray-400">{r.duration_minutes}m</span>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="mb-0.5 flex flex-wrap items-center gap-2">
+                      {soon && (
+                        <span title="Starting within 1 hour — place reserve sign">
+                          <AlertCircle size={16} className="text-red-500 shrink-0 animate-pulse" />
+                        </span>
+                      )}
+                      <span className="font-medium text-gray-900">{r.guest_name}</span>
+                      <Badge color={STATUS_COLORS[r.status]}>{r.status}</Badge>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-500">
+                      <span className="flex items-center gap-1">
+                        <Users size={12} />
+                        {r.party_size} guests
+                      </span>
+                      <span className="flex items-center gap-1">
+                        <LayoutGrid size={12} />
+                        {tableLabel}
+                      </span>
+                      {r.phone_number && (
+                        <span className="flex items-center gap-1">
+                          <Phone size={12} />
+                          {r.phone_number}
+                        </span>
+                      )}
+                      {r.notes && (
+                        <span className="max-w-full truncate italic sm:max-w-xs">"{r.notes}"</span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex w-full shrink-0 items-center gap-2 sm:w-auto">
+                    <Button variant="ghost" size="sm" onClick={() => onEdit(r)}>
+                      Edit
+                    </Button>
+                    {r.status === 'confirmed' || r.status === 'seated' ? (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => onCancel(r.id)}
+                        loading={cancelling}
+                        className="text-red-500 hover:text-red-700 hover:bg-red-50"
+                      >
+                        Cancel
+                      </Button>
+                    ) : null}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </CardBody>
+    </Card>
+  );
+}
+
+function EventsDayCard({ selectedDate }: { selectedDate: string }) {
+  const { data, isLoading, error } = useQuery({
+    queryKey: ['dailyEventsContext', selectedDate],
+    queryFn: () => eventsApi.dailyContext(selectedDate),
+    refetchInterval: 15 * 60_000,
+  });
+
+  return (
+    <Card key={`events-${selectedDate}`} className="animate-rezzy-fade-slide">
+      <CardHeader>
+        <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+          <h2 className="font-semibold text-gray-900">{formatDate(selectedDate)}</h2>
+          {data?.window_start && data?.window_end && (
+            <span className="flex items-center gap-1 text-xs font-medium text-gray-500">
+              <Clock size={13} />
+              {formatIsoTime(data.window_start)} - {formatIsoTime(data.window_end)}
+            </span>
+          )}
+        </div>
+      </CardHeader>
+      <CardBody>
+        {isLoading && (
+          <div className="py-10 text-center text-sm text-gray-400">Loading weather and nearby events...</div>
+        )}
+        {error && <Alert variant="error">Could not load weather and event context.</Alert>}
+        {data && <EventsDayContent data={data} />}
+      </CardBody>
+    </Card>
+  );
+}
+
+function EventsDayContent({ data }: { data: DailyEventsContext }) {
+  if (data.is_closed) {
+    return (
+      <div className="py-10 text-center text-gray-400">
+        <CalendarClock size={36} className="mx-auto mb-2 opacity-40" />
+        <p className="text-sm">Closed for this day</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(280px,420px)]">
+      <section>
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2 text-gray-700">
+            <CloudSun size={18} />
+            <h3 className="text-sm font-semibold">Hourly Weather</h3>
+          </div>
+          {data.weather_location && (
+            <span className="flex min-w-0 items-center gap-1 truncate text-xs text-gray-500">
+              <MapPin size={12} />
+              {data.weather_location}
+            </span>
+          )}
+        </div>
+        {data.weather.length === 0 ? (
+          <div className="rounded-lg border border-dashed border-gray-200 px-4 py-8 text-center text-sm text-gray-400">
+            No hourly weather for the operating window
+          </div>
+        ) : (
+          <div className="divide-y divide-gray-100 rounded-lg border border-gray-200">
+            {data.weather.map((hour) => (
+              <div key={hour.time} className="grid grid-cols-[5.5rem_1fr] gap-3 px-3 py-3 sm:grid-cols-[6rem_1fr_auto] sm:items-center">
+                <span className="text-sm font-semibold text-gray-900">{formatIsoTime(hour.time)}</span>
+                <div className="min-w-0">
+                  <p className="truncate text-sm text-gray-700">{hour.condition ?? 'Weather'}</p>
+                  <div className="mt-0.5 flex flex-wrap gap-x-3 gap-y-1 text-xs text-gray-500">
+                    <span className="flex items-center gap-1">
+                      <CloudRain size={12} />
+                      {hour.precipitation_probability ?? 0}%
+                    </span>
+                    {hour.wind_speed_mph !== null && (
+                      <span className="flex items-center gap-1">
+                        <Wind size={12} />
+                        {Math.round(hour.wind_speed_mph)} mph
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <span className="text-sm font-bold text-gray-900 sm:text-right">
+                  {hour.temperature_f !== null ? `${Math.round(hour.temperature_f)}°F` : '—'}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+
+      <section>
+        <div className="mb-3 flex items-center gap-2 text-gray-700">
+          <CalendarClock size={18} />
+          <h3 className="text-sm font-semibold">Nearby Events</h3>
+        </div>
+        {data.events.length === 0 ? (
+          <div className="rounded-lg border border-dashed border-gray-200 px-4 py-8 text-center text-sm text-gray-400">
+            No venue events during the operating window
+          </div>
+        ) : (
+          <div className="divide-y divide-gray-100 rounded-lg border border-gray-200">
+            {data.events.map((event) => (
+              <div key={`${event.source}-${event.starts_at}-${event.name}`} className="px-3 py-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-semibold text-gray-900">{event.name}</p>
+                    <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-gray-500">
+                      <span className="flex items-center gap-1">
+                        <Clock size={12} />
+                        {formatIsoTime(event.starts_at)}
+                      </span>
+                      <span className="flex items-center gap-1">
+                        <MapPin size={12} />
+                        {event.venue ?? event.source}
+                      </span>
+                    </div>
+                  </div>
+                  {event.url && (
+                    <a
+                      href={event.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      aria-label={`Open ${event.name}`}
+                      className="rounded-md p-1.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-700"
+                    >
+                      <ExternalLink size={15} />
+                    </a>
+                  )}
+                </div>
+                <Badge color={event.source === 'Enmarket Arena' ? 'purple' : 'blue'} className="mt-2">
+                  {event.source}
+                </Badge>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+
+      {data.errors.length > 0 && (
+        <div className="lg:col-span-2">
+          <Alert variant="warning">{data.errors.join(' ')}</Alert>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function formatIsoTime(value: string): string {
+  return new Date(value).toLocaleTimeString('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+  });
 }
 
 // ─── Time select ──────────────────────────────────────────────────────────────

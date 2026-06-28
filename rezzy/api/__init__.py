@@ -3,6 +3,7 @@ from rezzy.api.config import router as config_router
 from rezzy.api.tables import router as tables_router
 from rezzy.api.hours import router as hours_router
 from rezzy.api.reservations import router as reservations_router
+from rezzy.api.events import router as events_router
 
 __all__ = [
     "auth_router",
@@ -10,4 +11,5 @@ __all__ = [
     "tables_router",
     "hours_router",
     "reservations_router",
+    "events_router",
 ]
