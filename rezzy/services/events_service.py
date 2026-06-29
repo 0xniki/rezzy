@@ -4,7 +4,7 @@ import html
 import json
 import re
 from dataclasses import dataclass
-from datetime import date, datetime, time, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
@@ -18,7 +18,6 @@ from rezzy.services.hours_service import HoursValidationService
 
 
 LOCAL_TZ = ZoneInfo("America/New_York")
-GRACE_HOURS = 2
 ENMARKET_ICAL_URL = "https://enmarketarena.com/events/list/?ical=1"
 SAVANNAH_CIVIC_URL = "https://www.savannahcivic.com/events-1"
 OPEN_METEO_GEOCODE_URL = "https://geocoding-api.open-meteo.com/v1/search"
@@ -91,51 +90,88 @@ class OperatingWindow:
 
 
 def get_daily_events_context(db: Session, target_date: date) -> DailyEventsContext:
+    return get_weekly_events_context(db, target_date, target_date)[0]
+
+
+def get_weekly_events_context(
+    db: Session, start_date: date, end_date: date
+) -> list[DailyEventsContext]:
+    """Build daily contexts for an inclusive date range.
+
+    Weather and venue events are fetched once for the whole range and then
+    filtered per day, so loading a week costs the same external calls as a
+    single day.
+    """
     config = db.query(RestaurantConfig).first()
-    window = get_operating_window(db, target_date)
-    errors: list[str] = []
-
-    if window.is_closed:
-        return DailyEventsContext(
-            date=target_date,
-            window_start=window.starts_at,
-            window_end=window.ends_at,
-            is_closed=True,
-            weather_location=config.weather_location if config else None,
-        )
-
-    weather: list[WeatherHour] = []
     location = config.weather_location if config else None
+
+    all_events, event_errors = fetch_all_events()
+
+    weather_hours: list[WeatherHour] = []
+    weather_error: str | None = None
     if location:
         try:
-            weather = fetch_hourly_weather(location, target_date, window)
+            weather_hours = fetch_weather_range(location, start_date, end_date)
         except Exception:
-            errors.append("Hourly weather is temporarily unavailable.")
+            weather_error = "Hourly weather is temporarily unavailable."
     else:
-        errors.append("Set a weather location in Settings to show hourly weather.")
+        weather_error = "Set a weather location in Settings to show hourly weather."
 
+    contexts: list[DailyEventsContext] = []
+    day = start_date
+    while day <= end_date:
+        window = get_operating_window(db, day)
+        if window.is_closed:
+            contexts.append(
+                DailyEventsContext(
+                    date=day,
+                    window_start=window.starts_at,
+                    window_end=window.ends_at,
+                    is_closed=True,
+                    weather_location=location,
+                )
+            )
+            day += timedelta(days=1)
+            continue
+
+        weather = [hour for hour in weather_hours if window.contains(hour.time)]
+        events = sorted(
+            (event for event in all_events if window.contains(event.starts_at)),
+            key=lambda event: event.starts_at,
+        )
+        errors = list(event_errors)
+        if weather_error:
+            errors.append(weather_error)
+
+        contexts.append(
+            DailyEventsContext(
+                date=day,
+                window_start=window.starts_at,
+                window_end=window.ends_at,
+                is_closed=False,
+                weather_location=location,
+                weather=weather,
+                events=events,
+                errors=errors,
+            )
+        )
+        day += timedelta(days=1)
+
+    return contexts
+
+
+def fetch_all_events() -> tuple[list[VenueEvent], list[str]]:
     events: list[VenueEvent] = []
+    errors: list[str] = []
     for label, fetcher in (
         ("Enmarket Arena events are temporarily unavailable.", fetch_enmarket_events),
         ("Savannah Civic events are temporarily unavailable.", fetch_savannah_civic_events),
     ):
         try:
-            events.extend(event for event in fetcher() if window.contains(event.starts_at))
+            events.extend(fetcher())
         except Exception:
             errors.append(label)
-
-    events.sort(key=lambda event: event.starts_at)
-
-    return DailyEventsContext(
-        date=target_date,
-        window_start=window.starts_at,
-        window_end=window.ends_at,
-        is_closed=False,
-        weather_location=location,
-        weather=weather,
-        events=events,
-        errors=errors,
-    )
+    return events, errors
 
 
 def get_operating_window(db: Session, target_date: date) -> OperatingWindow:
@@ -145,16 +181,9 @@ def get_operating_window(db: Session, target_date: date) -> OperatingWindow:
     if is_closed or open_time is None or close_time is None:
         return OperatingWindow(None, None, True)
 
-    starts_at = datetime.combine(target_date, open_time, tzinfo=LOCAL_TZ) - timedelta(
-        hours=GRACE_HOURS
-    )
-    ends_at = datetime.combine(target_date, close_time, tzinfo=LOCAL_TZ) + timedelta(
-        hours=GRACE_HOURS
-    )
-
-    day_start = datetime.combine(target_date, time.min, tzinfo=LOCAL_TZ)
-    day_end = datetime.combine(target_date, time.max, tzinfo=LOCAL_TZ)
-    return OperatingWindow(max(starts_at, day_start), min(ends_at, day_end), False)
+    starts_at = datetime.combine(target_date, open_time, tzinfo=LOCAL_TZ)
+    ends_at = datetime.combine(target_date, close_time, tzinfo=LOCAL_TZ)
+    return OperatingWindow(starts_at, ends_at, False)
 
 
 def fetch_enmarket_events() -> list[VenueEvent]:
@@ -165,9 +194,10 @@ def fetch_savannah_civic_events() -> list[VenueEvent]:
     return parse_savannah_civic_html(fetch_text(SAVANNAH_CIVIC_URL))
 
 
-def fetch_hourly_weather(
-    location: str, target_date: date, window: OperatingWindow
+def fetch_weather_range(
+    location: str, start_date: date, end_date: date
 ) -> list[WeatherHour]:
+    """Fetch every hourly forecast entry across an inclusive date range."""
     place = resolve_weather_location(location)
     forecast_params = urlencode(
         {
@@ -184,8 +214,8 @@ def fetch_hourly_weather(
             "temperature_unit": "fahrenheit",
             "wind_speed_unit": "mph",
             "timezone": "America/New_York",
-            "start_date": target_date.isoformat(),
-            "end_date": target_date.isoformat(),
+            "start_date": start_date.isoformat(),
+            "end_date": end_date.isoformat(),
         }
     )
     forecast = fetch_json(f"{OPEN_METEO_FORECAST_URL}?{forecast_params}")
@@ -195,8 +225,6 @@ def fetch_hourly_weather(
     weather: list[WeatherHour] = []
     for index, raw_time in enumerate(times):
         timestamp = datetime.fromisoformat(raw_time).replace(tzinfo=LOCAL_TZ)
-        if not window.contains(timestamp):
-            continue
         code = get_index(hourly.get("weather_code"), index)
         weather.append(
             WeatherHour(

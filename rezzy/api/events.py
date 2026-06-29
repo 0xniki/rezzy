@@ -5,7 +5,10 @@ from sqlalchemy.orm import Session
 
 from rezzy.core.database import get_db
 from rezzy.schemas import DailyEventsContext
-from rezzy.services.events_service import get_daily_events_context
+from rezzy.services.events_service import (
+    get_daily_events_context,
+    get_weekly_events_context,
+)
 
 
 router = APIRouter(prefix="/events", tags=["Events and Weather"])
@@ -17,3 +20,12 @@ def get_daily_context(
     db: Session = Depends(get_db),
 ):
     return get_daily_events_context(db, target_date)
+
+
+@router.get("/weekly-context", response_model=list[DailyEventsContext])
+def get_weekly_context(
+    start_date: date = Query(..., alias="start"),
+    end_date: date = Query(..., alias="end"),
+    db: Session = Depends(get_db),
+):
+    return get_weekly_events_context(db, start_date, end_date)

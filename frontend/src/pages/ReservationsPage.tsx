@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { reservationsApi } from '../api/reservations';
 import { operatingHoursApi, specialHoursApi } from '../api/hours';
@@ -21,16 +21,61 @@ import type {
   OperatingHours,
   SpecialHours,
   DailyEventsContext,
+  WeatherHour,
 } from '../types';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-/** True if a confirmed reservation starts within the next 60 minutes of `now` */
+/** True if a confirmed reservation starts within the next 90 minutes of `now` */
 function isUpcomingSoon(r: Reservation, now: Date): boolean {
   if (r.status !== 'confirmed') return false;
   const resStart = new Date(`${r.reservation_date}T${r.reservation_time}`);
   const diffMs = resStart.getTime() - now.getTime();
-  return diffMs >= 0 && diffMs <= 60 * 60 * 1000;
+  return diffMs >= 0 && diffMs <= 90 * 60 * 1000;
+}
+
+/** Outdoor tables are numbered "Out…" (OutA, OutB, …) */
+function isOutdoorTableNumber(tableNumber: string): boolean {
+  return tableNumber.trim().toLowerCase().startsWith('out');
+}
+
+/** True if an hourly forecast entry indicates rain (by condition or high chance) */
+function isRainyHour(hour: WeatherHour): boolean {
+  const condition = (hour.condition ?? '').toLowerCase();
+  const rainyCondition = ['rain', 'drizzle', 'shower', 'thunder'].some((word) =>
+    condition.includes(word)
+  );
+  return rainyCondition || (hour.precipitation_probability ?? 0) >= 50;
+}
+
+/** Set of clock hours (0–23) that are forecast to be rainy */
+function rainyHourSet(weather: WeatherHour[]): Set<number> {
+  return new Set(
+    weather.filter(isRainyHour).map((hour) => new Date(hour.time).getHours())
+  );
+}
+
+/** True if the given "HH:MM[:SS]" time falls in a rainy forecast hour */
+function isRainyAtTime(weather: WeatherHour[], time: string): boolean {
+  return rainyHourSet(weather).has(Number(time.slice(0, 2)));
+}
+
+/**
+ * Active reservations for an outdoor ("Out…") table whose start hour lands in a
+ * rainy forecast hour.
+ */
+function outdoorReservationsInRain(
+  dayRes: Reservation[],
+  weather: WeatherHour[]
+): Reservation[] {
+  const rainyHours = rainyHourSet(weather);
+  if (rainyHours.size === 0) return [];
+  return dayRes.filter(
+    (r) =>
+      (r.status === 'confirmed' || r.status === 'seated') &&
+      r.tables.some((t) => isOutdoorTableNumber(t.table_number)) &&
+      rainyHours.has(Number(r.reservation_time.slice(0, 2)))
+  );
 }
 
 /** Generate every 15-minute slot for a 24-hour day as "HH:MM" strings */
@@ -208,7 +253,7 @@ export default function ReservationsPage() {
   const [showCreate, setShowCreate] = useState(false);
   const [editRes, setEditRes] = useState<Reservation | null>(null);
 
-  // Ticks every 30 s so the 1-hour badge appears without a page reload
+  // Ticks every 30 s so the 1.5-hour badge appears without a page reload
   const [now, setNow] = useState(() => new Date());
   useEffect(() => {
     const id = setInterval(() => setNow(new Date()), 30_000);
@@ -234,6 +279,29 @@ export default function ReservationsPage() {
     queryFn: () => reservationsApi.list({ start_date: startDate, end_date: endDate }),
     refetchInterval: 60_000,
   });
+
+  // Weather + events for the whole visible week, fetched in one request on load.
+  // Navigating to another week lazily fetches (and caches) that week's range.
+  const {
+    data: weekContext = [],
+    isLoading: loadingWeekContext,
+    error: weekContextError,
+  } = useQuery({
+    queryKey: ['weeklyEventsContext', startDate, endDate],
+    queryFn: () => eventsApi.weeklyContext(startDate, endDate),
+    refetchInterval: 15 * 60_000,
+  });
+  const contextByDate = useMemo(
+    () => new Map(weekContext.map((day) => [day.date, day])),
+    [weekContext]
+  );
+  const selectedContext = contextByDate.get(selectedDate);
+
+  const { data: specialHours = [] } = useQuery({
+    queryKey: ['specialHours', startDate, endDate],
+    queryFn: () => specialHoursApi.list(startDate, endDate),
+  });
+  const selectedSpecial = specialHours.find((h) => h.date === selectedDate) ?? null;
 
   const cancelMutation = useMutation({
     mutationFn: (id: number) => reservationsApi.cancel(id),
@@ -375,9 +443,17 @@ export default function ReservationsPage() {
           onEdit={setEditRes}
           onCancel={(id) => cancelMutation.mutate(id)}
           cancelling={cancelMutation.isPending}
+          onViewEvents={() => setActiveTab('events')}
+          eventsContext={selectedContext}
+          specialHours={selectedSpecial}
         />
       ) : (
-        <EventsDayCard selectedDate={selectedDate} />
+        <EventsDayCard
+          selectedDate={selectedDate}
+          data={selectedContext}
+          isLoading={loadingWeekContext}
+          error={weekContextError}
+        />
       )}
 
       {showCreate && (
@@ -404,6 +480,9 @@ function ReservationsDayCard({
   onEdit,
   onCancel,
   cancelling,
+  onViewEvents,
+  eventsContext,
+  specialHours,
 }: {
   selectedDate: string;
   dayRes: Reservation[];
@@ -411,9 +490,68 @@ function ReservationsDayCard({
   onEdit: (reservation: Reservation) => void;
   onCancel: (id: number) => void;
   cancelling: boolean;
+  onViewEvents: () => void;
+  eventsContext: DailyEventsContext | undefined;
+  specialHours: SpecialHours | null;
 }) {
+  const events = eventsContext?.events ?? [];
+  const rainyReservations = outdoorReservationsInRain(dayRes, eventsContext?.weather ?? []);
+
   return (
-    <Card key={selectedDate} className="animate-rezzy-fade-slide">
+    <>
+      {specialHours && (
+        <Alert variant="info" className="mb-4">
+          <span className="font-medium">Special hours</span> on {formatDate(selectedDate)}:{' '}
+          {specialHours.is_closed
+            ? 'Closed'
+            : `${formatTime(specialHours.open_time)} – ${formatTime(specialHours.close_time)}`}
+          {specialHours.reason ? ` — ${specialHours.reason}` : ''}
+        </Alert>
+      )}
+      {events.length > 0 && (
+        <Alert variant="warning" className="mb-4">
+          <div className="flex flex-col gap-1.5 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
+            <span>
+              <span className="font-medium">
+                {events.length} nearby {events.length === 1 ? 'event' : 'events'}
+              </span>{' '}
+              on {formatDate(selectedDate)} — expect higher demand.{' '}
+              <span className="text-yellow-700">
+                {events.map((e) => e.name).join(', ')}
+              </span>
+            </span>
+            <button
+              type="button"
+              onClick={onViewEvents}
+              className="shrink-0 self-start whitespace-nowrap text-sm font-medium text-yellow-800 underline underline-offset-2 hover:text-yellow-900 sm:self-auto"
+            >
+              View events
+            </button>
+          </div>
+        </Alert>
+      )}
+      {rainyReservations.length > 0 && (
+        <Alert variant="warning" className="mb-4">
+          <div className="flex flex-col gap-1.5 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
+            <span className="flex items-start gap-2">
+              <CloudRain size={16} className="mt-0.5 shrink-0 text-yellow-700" />
+              <span>
+                <span className="font-medium">
+                  {rainyReservations.length} outdoor{' '}
+                  {rainyReservations.length === 1 ? 'reservation' : 'reservations'} during rain
+                </span>{' '}
+                — guests may need cover or an indoor table.{' '}
+                <span className="text-yellow-700">
+                  {rainyReservations
+                    .map((r) => `${r.guest_name} (${formatTime(r.reservation_time)})`)
+                    .join(', ')}
+                </span>
+              </span>
+            </span>
+          </div>
+        </Alert>
+      )}
+      <Card key={selectedDate} className="animate-rezzy-fade-slide">
       <CardHeader>
         <h2 className="font-semibold text-gray-900">
           {formatDate(selectedDate)}
@@ -450,7 +588,7 @@ function ReservationsDayCard({
                   <div className="flex-1 min-w-0">
                     <div className="mb-0.5 flex flex-wrap items-center gap-2">
                       {soon && (
-                        <span title="Starting within 1 hour — place reserve sign">
+                        <span title="Starting within 1.5 hours — place reserve sign">
                           <AlertCircle size={16} className="text-red-500 shrink-0 animate-pulse" />
                         </span>
                       )}
@@ -500,16 +638,21 @@ function ReservationsDayCard({
         )}
       </CardBody>
     </Card>
+    </>
   );
 }
 
-function EventsDayCard({ selectedDate }: { selectedDate: string }) {
-  const { data, isLoading, error } = useQuery({
-    queryKey: ['dailyEventsContext', selectedDate],
-    queryFn: () => eventsApi.dailyContext(selectedDate),
-    refetchInterval: 15 * 60_000,
-  });
-
+function EventsDayCard({
+  selectedDate,
+  data,
+  isLoading,
+  error,
+}: {
+  selectedDate: string;
+  data: DailyEventsContext | undefined;
+  isLoading: boolean;
+  error: unknown;
+}) {
   return (
     <Card key={`events-${selectedDate}`} className="animate-rezzy-fade-slide">
       <CardHeader>
@@ -728,10 +871,19 @@ function CreateReservationModal({ open, onClose, defaultDate }: CreateModalProps
     table_ids: [],
   });
   const [error, setError] = useState('');
+  const [rainWarning, setRainWarning] = useState('');
   const [availableOptions, setAvailableOptions] = useState<AvailableOption[]>([]);
   const [searchedAvail, setSearchedAvail] = useState(false);
   const [selectedOption, setSelectedOption] = useState<AvailableOption | null>(null);
   const { options: currentTimeOptions, isLoading: loadingCurrentTimeOptions } = useBookableTimeSlots(form.reservation_date);
+
+  // Weather for the chosen date, used to warn when booking an outdoor table in the rain.
+  const { data: dayContext } = useQuery({
+    queryKey: ['dailyEventsContext', form.reservation_date],
+    queryFn: () => eventsApi.dailyContext(form.reservation_date),
+    refetchInterval: 15 * 60_000,
+  });
+
   const selectedReservationTime =
     currentTimeOptions.includes(normalizeTime(form.reservation_time))
       ? normalizeTime(form.reservation_time)
@@ -742,7 +894,15 @@ function CreateReservationModal({ open, onClose, defaultDate }: CreateModalProps
     setSearchedAvail(false);
     setAvailableOptions([]);
     setSelectedOption(null);
+    setRainWarning('');
   };
+
+  const selectedHasOutdoorTable =
+    selectedOption?.table_numbers.some(isOutdoorTableNumber) ?? false;
+  const outdoorRainConflict =
+    selectedHasOutdoorTable &&
+    !!selectedReservationTime &&
+    isRainyAtTime(dayContext?.weather ?? [], selectedReservationTime);
 
   const set = (patch: Partial<CreateReservationForm>) => {
     setForm((f) => ({ ...f, ...patch }));
@@ -777,10 +937,11 @@ function CreateReservationModal({ open, onClose, defaultDate }: CreateModalProps
   const handleSelectOption = (option: AvailableOption) => {
     setSelectedOption(option);
     setForm((f) => ({ ...f, table_ids: option.table_ids }));
+    setRainWarning('');
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubmit = (e?: React.FormEvent, skipRainCheck = false) => {
+    e?.preventDefault();
     setError('');
     const partySize = parsePartySize(form.party_size);
     const validationError = validatePartyAndPhone(partySize, form.phone_number);
@@ -797,6 +958,18 @@ function CreateReservationModal({ open, onClose, defaultDate }: CreateModalProps
       setError('Please search for availability and select a table assignment');
       return;
     }
+    if (outdoorRainConflict && !skipRainCheck) {
+      const outdoorTables =
+        selectedOption?.table_numbers.filter(isOutdoorTableNumber) ?? [];
+      const verb = outdoorTables.length > 1 ? 'are' : 'is';
+      setRainWarning(
+        `Rain is forecast around ${formatSlot(selectedReservationTime)} and ${outdoorTables.join(
+          ', '
+        )} ${verb} outdoors. Click "Book Anyway" to confirm.`
+      );
+      return;
+    }
+    setRainWarning('');
     createMutation.mutate({
       ...form,
       party_size: partySize,
@@ -956,13 +1129,34 @@ function CreateReservationModal({ open, onClose, defaultDate }: CreateModalProps
           )}
         </div>
 
+        {rainWarning && (
+          <Alert variant="warning">
+            <span className="flex items-start gap-2">
+              <CloudRain size={16} className="mt-0.5 shrink-0 text-yellow-700" />
+              {rainWarning}
+            </span>
+          </Alert>
+        )}
+
         <div className="flex flex-col-reverse gap-3 pt-2 sm:flex-row sm:justify-end">
           <Button type="button" variant="outline" onClick={onClose} className="w-full sm:w-auto">
             Cancel
           </Button>
-          <Button type="submit" loading={createMutation.isPending} disabled={loadingCurrentTimeOptions || noBookableTimes} className="w-full sm:w-auto">
-            Create Reservation
-          </Button>
+          {rainWarning ? (
+            <Button
+              type="button"
+              variant="danger"
+              loading={createMutation.isPending}
+              onClick={() => handleSubmit(undefined, true)}
+              className="w-full sm:w-auto"
+            >
+              Book Anyway
+            </Button>
+          ) : (
+            <Button type="submit" loading={createMutation.isPending} disabled={loadingCurrentTimeOptions || noBookableTimes} className="w-full sm:w-auto">
+              Create Reservation
+            </Button>
+          )}
         </div>
       </form>
     </Modal>
@@ -990,10 +1184,19 @@ function EditReservationModal({
     status: reservation.status as ReservationStatus,
   });
   const [error, setError] = useState('');
+  const [rainWarning, setRainWarning] = useState('');
   const [availableOptions, setAvailableOptions] = useState<AvailableOption[]>([]);
   const [searchedAvail, setSearchedAvail] = useState(false);
   const [selectedOption, setSelectedOption] = useState<AvailableOption | null>(null);
   const { options: currentTimeOptions, isLoading: loadingCurrentTimeOptions } = useBookableTimeSlots(form.reservation_date);
+
+  // Weather for the chosen date, used to warn when moving to an outdoor table in the rain.
+  const { data: dayContext } = useQuery({
+    queryKey: ['dailyEventsContext', form.reservation_date],
+    queryFn: () => eventsApi.dailyContext(form.reservation_date),
+    refetchInterval: 15 * 60_000,
+  });
+
   const originalReservationTime = normalizeTime(reservation.reservation_time);
   const formReservationTime = normalizeTime(form.reservation_time);
   const timeUnchanged =
@@ -1013,10 +1216,19 @@ function EditReservationModal({
   const noBookableTimes = !loadingCurrentTimeOptions && currentTimeOptions.length === 0;
   const dateTimeChangeBlocked = dateTimeChanged && !selectedTimeIsBookable;
 
+  // Warn when reassigning to an outdoor ("Out…") table during a rainy hour.
+  const selectedHasOutdoorTable =
+    selectedOption?.table_numbers.some(isOutdoorTableNumber) ?? false;
+  const outdoorRainConflict =
+    selectedHasOutdoorTable &&
+    !!displayedReservationTime &&
+    isRainyAtTime(dayContext?.weather ?? [], displayedReservationTime);
+
   const resetAvailability = () => {
     setSearchedAvail(false);
     setAvailableOptions([]);
     setSelectedOption(null);
+    setRainWarning('');
   };
 
   const set = (patch: Partial<typeof form>, resetsTables = false) => {
@@ -1096,8 +1308,8 @@ function EditReservationModal({
     searchMutation.mutate(partySize);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubmit = (e?: React.FormEvent, skipRainCheck = false) => {
+    e?.preventDefault();
     setError('');
     const partySize = parsePartySize(form.party_size);
     const validationError = validatePartyAndPhone(partySize, form.phone_number);
@@ -1110,6 +1322,18 @@ function EditReservationModal({
       setError(noBookableTimes ? 'No bookable times for this date' : 'Choose a bookable time before saving date or time changes');
       return;
     }
+    if (outdoorRainConflict && !skipRainCheck) {
+      const outdoorTables =
+        selectedOption?.table_numbers.filter(isOutdoorTableNumber) ?? [];
+      const verb = outdoorTables.length > 1 ? 'are' : 'is';
+      setRainWarning(
+        `Rain is forecast around ${formatSlot(displayedReservationTime)} and ${outdoorTables.join(
+          ', '
+        )} ${verb} outdoors. Click "Save Anyway" to confirm.`
+      );
+      return;
+    }
+    setRainWarning('');
     mutation.mutate(partySize);
   };
 
@@ -1223,7 +1447,10 @@ function EditReservationModal({
                   <button
                     key={opt.table_ids.join('-')}
                     type="button"
-                    onClick={() => setSelectedOption(opt)}
+                    onClick={() => {
+                      setSelectedOption(opt);
+                      setRainWarning('');
+                    }}
                     className={`border rounded-xl p-3 text-left transition-colors ${
                       isSelected
                         ? 'border-blue-500 bg-blue-50'
@@ -1259,13 +1486,34 @@ function EditReservationModal({
           )}
         </div>
 
+        {rainWarning && (
+          <Alert variant="warning">
+            <span className="flex items-start gap-2">
+              <CloudRain size={16} className="mt-0.5 shrink-0 text-yellow-700" />
+              {rainWarning}
+            </span>
+          </Alert>
+        )}
+
         <div className="flex flex-col-reverse gap-3 pt-2 sm:flex-row sm:justify-end">
           <Button type="button" variant="outline" onClick={onClose} className="w-full sm:w-auto">
             Cancel
           </Button>
-          <Button type="submit" loading={mutation.isPending} disabled={loadingCurrentTimeOptions || dateTimeChangeBlocked} className="w-full sm:w-auto">
-            Save Changes
-          </Button>
+          {rainWarning ? (
+            <Button
+              type="button"
+              variant="danger"
+              loading={mutation.isPending}
+              onClick={() => handleSubmit(undefined, true)}
+              className="w-full sm:w-auto"
+            >
+              Save Anyway
+            </Button>
+          ) : (
+            <Button type="submit" loading={mutation.isPending} disabled={loadingCurrentTimeOptions || dateTimeChangeBlocked} className="w-full sm:w-auto">
+              Save Changes
+            </Button>
+          )}
         </div>
       </form>
     </Modal>

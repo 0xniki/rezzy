@@ -1,7 +1,7 @@
 from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
-from rezzy.schemas import VenueEvent
+from rezzy.schemas import VenueEvent, WeatherHour
 from rezzy.services import events_service
 
 
@@ -17,40 +17,83 @@ def event_at(name: str, hour: int, minute: int = 0) -> VenueEvent:
 
 
 class TestDailyEventsContext:
-    def test_operating_window_uses_two_hour_grace(self, client, full_setup):
+    def test_operating_window_matches_operating_hours(self, client, full_setup):
         response = client.get("/events/daily-context?date=2026-07-03")
 
         assert response.status_code == 200
         data = response.json()
-        assert data["window_start"] == "2026-07-03T09:00:00-04:00"
-        assert data["window_end"] == "2026-07-03T23:59:59.999999-04:00"
+        assert data["window_start"] == "2026-07-03T11:00:00-04:00"
+        assert data["window_end"] == "2026-07-03T22:00:00-04:00"
 
     def test_filters_events_to_operating_window(self, client, full_setup, monkeypatch):
         client.patch("/config", json={"weather_location": "Savannah, GA"})
 
-        monkeypatch.setattr(events_service, "fetch_hourly_weather", lambda *_: [])
+        monkeypatch.setattr(events_service, "fetch_weather_range", lambda *_: [])
         monkeypatch.setattr(
             events_service,
             "fetch_enmarket_events",
             lambda: [
-                event_at("Too early", 8, 59),
-                event_at("At grace start", 9),
-                event_at("Late but included", 23, 30),
+                event_at("Before open", 10, 59),
+                event_at("At open", 11),
+                event_at("At close", 22),
             ],
         )
         monkeypatch.setattr(
             events_service,
             "fetch_savannah_civic_events",
-            lambda: [event_at("After day clamp", 0)],
+            lambda: [event_at("After close", 22, 1)],
         )
 
         response = client.get("/events/daily-context?date=2026-07-03")
 
         assert response.status_code == 200
         assert [event["name"] for event in response.json()["events"]] == [
-            "At grace start",
-            "Late but included",
+            "At open",
+            "At close",
         ]
+
+    def test_weekly_context_filters_each_day(self, client, full_setup, monkeypatch):
+        client.patch("/config", json={"weather_location": "Savannah, GA"})
+
+        def fake_weather_range(location, start_date, end_date):
+            return [
+                WeatherHour(time=datetime(2026, 7, 3, 12, tzinfo=TZ)),
+                WeatherHour(time=datetime(2026, 7, 4, 12, tzinfo=TZ)),
+                WeatherHour(time=datetime(2026, 7, 4, 23, tzinfo=TZ)),  # past close
+            ]
+
+        fetch_calls = {"events": 0}
+
+        def fake_enmarket():
+            fetch_calls["events"] += 1
+            return [
+                event_at("Day one show", 19),
+                VenueEvent(
+                    source="Test Venue",
+                    name="Day two show",
+                    starts_at=datetime(2026, 7, 4, 20, tzinfo=TZ),
+                ),
+            ]
+
+        monkeypatch.setattr(events_service, "fetch_weather_range", fake_weather_range)
+        monkeypatch.setattr(events_service, "fetch_enmarket_events", fake_enmarket)
+        monkeypatch.setattr(events_service, "fetch_savannah_civic_events", lambda: [])
+
+        response = client.get("/events/weekly-context?start=2026-07-03&end=2026-07-04")
+
+        assert response.status_code == 200
+        days = response.json()
+        assert [day["date"] for day in days] == ["2026-07-03", "2026-07-04"]
+        assert [hour["time"] for hour in days[0]["weather"]] == [
+            "2026-07-03T12:00:00-04:00"
+        ]
+        assert [hour["time"] for hour in days[1]["weather"]] == [
+            "2026-07-04T12:00:00-04:00"
+        ]
+        assert [event["name"] for event in days[0]["events"]] == ["Day one show"]
+        assert [event["name"] for event in days[1]["events"]] == ["Day two show"]
+        # Events are fetched once for the whole range, not per day.
+        assert fetch_calls["events"] == 1
 
     def test_closed_day_returns_empty_context(self, client, full_setup, monkeypatch):
         client.post(
